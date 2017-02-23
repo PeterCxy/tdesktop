@@ -28,7 +28,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include <QtGui/QPainter>
 #include <QtCore/QDir>
 
-Q_IMPORT_PLUGIN(QWebpPlugin)
+/*Q_IMPORT_PLUGIN(QWebpPlugin)
 #ifdef Q_OS_MAC
 Q_IMPORT_PLUGIN(QCocoaIntegrationPlugin)
 #elif defined Q_OS_WIN
@@ -36,7 +36,7 @@ Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin)
 #else // !Q_OS_MAC && !Q_OS_WIN
 Q_IMPORT_PLUGIN(QXcbIntegrationPlugin)
 #endif // !Q_OS_MAC && !Q_OS_WIN
-
+*/
 namespace codegen {
 namespace emoji {
 namespace {
@@ -56,13 +56,13 @@ QRect computeSourceRect(const QImage &image) {
 	auto top = 1, bottom = 1, left = 1, right = 1;
 	auto rgbBits = reinterpret_cast<const QRgb*>(image.constBits());
 	for (auto i = 0; i != size; ++i) {
-		if (rgbBits[i] > 0
+		/*if (rgbBits[i] > 0
 			|| rgbBits[(size - 1) * size + i] > 0
 			|| rgbBits[i * size] > 0
 			|| rgbBits[i * size + (size - 1)] > 0) {
 			logDataError() << "Bad border.";
 			return QRect();
-		}
+		}*/
 		if (rgbBits[1 * size + i] > 0) {
 			top = -1;
 		} else if (top > 0 && rgbBits[2 * size + i] > 0) {
@@ -84,7 +84,7 @@ QRect computeSourceRect(const QImage &image) {
 			right = 0;
 		}
 	}
-	if (top < 0) {
+	/*if (top < 0) {
 		if (bottom <= 0) {
 			logDataError() << "Bad vertical :(";
 			return QRect();
@@ -113,7 +113,7 @@ QRect computeSourceRect(const QImage &image) {
 		} else {
 			result.setX(result.x() - 1);
 		}
-	}
+	}*/
 	return result;
 }
 
@@ -143,11 +143,11 @@ int Generator::generate() {
 		return -1;
 	}
 
-#ifdef Q_OS_MAC
+//#ifdef Q_OS_MAC
 	if (!writeImages()) {
 		return -1;
 	}
-#endif // Q_OS_MAC
+//#endif // Q_OS_MAC
 
 	if (!writeSource()) {
 		return -1;
@@ -162,8 +162,8 @@ constexpr auto kEmojiInRow = 40;
 QImage Generator::generateImage(int variantIndex) {
 	constexpr int kEmojiSizes[kVariantsCount + 1] = { 18, 22, 27, 36, 45, 180 };
 	constexpr bool kBadSizes[kVariantsCount] = { true, true, false, false, false };
-	constexpr int kEmojiFontSizes[kVariantsCount + 1] = { 14, 20, 27, 36, 45, 180 };
-	constexpr int kEmojiDeltas[kVariantsCount + 1] = { 15, 20, 25, 34, 42, 167 };
+	constexpr int kEmojiFontSizes[kVariantsCount + 1] = { 14, 20, 24, 32, 40, 160 };
+	constexpr int kEmojiDeltas[kVariantsCount + 1] = { 15, 20, 22, 30, 37, 150 };
 
 	auto emojiCount = data_.list.size();
 	auto columnsCount = kEmojiInRow;
@@ -174,7 +174,7 @@ QImage Generator::generateImage(int variantIndex) {
 	auto sourceSize = (isBad ? kEmojiSizes[kVariantsCount] : emojiSize);
 
 	auto font = QGuiApplication::font();
-	font.setFamily(QStringLiteral("Apple Color Emoji"));
+	font.setFamily(QStringLiteral("Noto Color Emoji"));
 	font.setPixelSize(kEmojiFontSizes[isBad ? kVariantsCount : variantIndex]);
 
 	auto singleSize = 4 + sourceSize;
