@@ -81,6 +81,9 @@ build() {
   # Patched GYP (supports cmake precompiled headers)
   getGYP
 
+  # Guideline Support Library
+  getGSL
+
   # Configure the build
   if [[ $BUILD_VERSION == *"disable_autoupdate"* ]]; then
     GYP_DEFINES+=",TDESKTOP_DISABLE_AUTOUPDATE"
@@ -202,7 +205,7 @@ buildVa() {
   rm -rf *
 
   cd "$EXTERNAL"
-  git clone git://anongit.freedesktop.org/git/libva
+  git clone https://github.com/01org/libva
 
   cd "$EXTERNAL/libva"
   ./autogen.sh --prefix=$VA_PATH --enable-static
@@ -520,8 +523,7 @@ buildCustomQt() {
   git clone git://code.qt.io/qt/qt5.git qt${QT_VERSION}
 
   cd "$EXTERNAL/qt${QT_VERSION}"
-  git checkout "$(echo ${QT_VERSION} | sed -e s/\..$//)"
-  perl init-repository --module-subset=qtbase,qtimageformats
+  perl init-repository --branch --module-subset=qtbase,qtimageformats
   git checkout v${QT_VERSION}
   cd qtbase && git checkout v${QT_VERSION} && cd ..
   cd qtimageformats && git checkout v${QT_VERSION} && cd ..
@@ -537,6 +539,12 @@ buildCustomQt() {
               -dbus-runtime -no-gstreamer -no-mtdev # <- Not sure about these
   make $MAKE_ARGS
   sudo make install
+}
+
+getGSL() {
+  cd "$UPSTREAM"
+  git submodule init
+  git submodule update
 }
 
 getGYP() {

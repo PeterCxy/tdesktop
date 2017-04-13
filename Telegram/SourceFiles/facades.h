@@ -35,31 +35,39 @@ class ItemBase;
 namespace App {
 namespace internal {
 
-void CallDelayed(int duration, base::lambda<void()> &&lambda);
+void CallDelayed(int duration, base::lambda_once<void()> &&lambda);
 
 } // namespace internal
 
 template <int N, typename Lambda>
-inline void CallDelayed(int duration, base::internal::lambda_guard<N, Lambda> &&guarded) {
-	return internal::CallDelayed(duration, [guarded = std_::move(guarded)] { guarded(); });
+inline void CallDelayed(int duration, base::lambda_internal::guard<N, Lambda> &&guarded) {
+	return internal::CallDelayed(duration, [guarded = std::move(guarded)] { guarded(); });
 }
 
 template <typename Pointer, typename ...PointersAndLambda>
 inline void CallDelayed(int duration, Pointer &&qobject, PointersAndLambda&&... qobjectsAndLambda) {
-	auto guarded = base::lambda_guarded(std_::forward<Pointer>(qobject), std_::forward<PointersAndLambda>(qobjectsAndLambda)...);
-	return CallDelayed(duration, std_::move(guarded));
+	auto guarded = base::lambda_guarded(std::forward<Pointer>(qobject), std::forward<PointersAndLambda>(qobjectsAndLambda)...);
+	return CallDelayed(duration, std::move(guarded));
 }
 
 template <typename ...PointersAndLambda>
 inline base::lambda<void()> LambdaDelayed(int duration, PointersAndLambda&&... qobjectsAndLambda) {
-	auto guarded = base::lambda_guarded(std_::forward<PointersAndLambda>(qobjectsAndLambda)...);
-	return [guarded = std_::move(guarded), duration] {
-		CallDelayed(duration, guarded.clone());
+	auto guarded = base::lambda_guarded(std::forward<PointersAndLambda>(qobjectsAndLambda)...);
+	return [guarded = std::move(guarded), duration] {
+		internal::CallDelayed(duration, [guarded] { guarded(); });
+	};
+}
+
+template <typename ...PointersAndLambda>
+inline base::lambda_once<void()> LambdaDelayedOnce(int duration, PointersAndLambda&&... qobjectsAndLambda) {
+	auto guarded = base::lambda_guarded(std::forward<PointersAndLambda>(qobjectsAndLambda)...);
+	return [guarded = std::move(guarded), duration]() mutable {
+		internal::CallDelayed(duration, [guarded = std::move(guarded)] { guarded(); });
 	};
 }
 
 void sendBotCommand(PeerData *peer, UserData *bot, const QString &cmd, MsgId replyTo = 0);
-bool insertBotCommand(const QString &cmd, bool specialGif = false);
+bool insertBotCommand(const QString &cmd);
 void activateBotCommand(const HistoryItem *msg, int row, int col);
 void searchByHashtag(const QString &tag, PeerData *inPeer);
 void openPeerByName(const QString &username, MsgId msgId = ShowAtUnreadMsgId, const QString &startToken = QString());
@@ -90,7 +98,7 @@ void hideMediaPreview();
 template <typename BoxType>
 QPointer<BoxType> show(object_ptr<BoxType> content, ShowLayerOptions options = CloseOtherLayers) {
 	auto result = QPointer<BoxType>(content.data());
-	internal::showBox(std_::move(content), options);
+	internal::showBox(std::move(content), options);
 	return result;
 }
 
@@ -98,11 +106,8 @@ void hideLayer(bool fast = false);
 void hideSettingsAndLayer(bool fast = false);
 bool isLayerShown();
 bool isMediaViewShown();
-bool isInlineItemBeingChosen();
 
 void repaintHistoryItem(const HistoryItem *item);
-void repaintInlineItem(const InlineBots::Layout::ItemBase *layout);
-bool isInlineItemVisible(const InlineBots::Layout::ItemBase *reader);
 void autoplayMediaInlineAsync(const FullMsgId &msgId);
 
 void showPeerProfile(const PeerId &peer);
@@ -169,25 +174,13 @@ bool switchInlineBotButtonReceived(const QString &query, UserData *samePeerBot =
 
 void migrateUpdated(PeerData *peer);
 
-void clipStopperHidden(ClipStopperType type);
-
 void historyItemLayoutChanged(const HistoryItem *item);
-void inlineItemLayoutChanged(const InlineBots::Layout::ItemBase *layout);
 void historyMuteUpdated(History *history);
 
 // handle pending resize() / paint() on history items
 void handlePendingHistoryUpdate();
 void unreadCounterUpdated();
 
-enum class ChangeType {
-	SoundEnabled,
-	IncludeMuted,
-	DesktopEnabled,
-	ViewParams,
-	MaxCount,
-	Corner,
-	DemoIsShown,
-};
 
 enum class ScreenCorner {
 	TopLeft     = 0,
@@ -205,14 +198,6 @@ inline bool IsTopCorner(ScreenCorner corner) {
 }
 
 } // namespace Notify
-
-namespace base {
-
-template <>
-struct custom_is_fast_copy_type<Notify::ChangeType> : public std_::true_type {
-};
-
-} // namespace base
 
 #define DeclareReadOnlyVar(Type, Name) const Type &Name();
 #define DeclareRefVar(Type, Name) DeclareReadOnlyVar(Type, Name) \
@@ -309,7 +294,6 @@ void finish();
 DeclareReadOnlyVar(uint64, LaunchId);
 DeclareRefVar(SingleDelayedCall, HandleHistoryUpdate);
 DeclareRefVar(SingleDelayedCall, HandleUnreadCounterUpdate);
-DeclareRefVar(SingleDelayedCall, HandleFileDialogQueue);
 DeclareRefVar(SingleDelayedCall, HandleDelayedPeerUpdates);
 DeclareRefVar(SingleDelayedCall, HandleObservables);
 
@@ -352,6 +336,7 @@ DeclareVar(int32, SavedGifsLimit);
 DeclareVar(int32, EditTimeLimit);
 DeclareVar(int32, StickersRecentLimit);
 DeclareVar(int32, PinnedDialogsCountMax);
+DeclareVar(QString, InternalLinksDomain);
 
 typedef QMap<PeerId, MsgId> HiddenPinnedMessagesMap;
 DeclareVar(HiddenPinnedMessagesMap, HiddenPinnedMessages);
@@ -368,8 +353,6 @@ DeclareVar(int, FeaturedStickerSetsUnreadCount);
 DeclareRefVar(base::Observable<void>, FeaturedStickerSetsUnreadCountChanged);
 DeclareVar(TimeMs, LastFeaturedStickersUpdate);
 DeclareVar(Stickers::Order, ArchivedStickerSetsOrder);
-
-DeclareVar(MTP::DcOptions, DcOptions);
 
 typedef QMap<uint64, QPixmap> CircleMasksMap;
 DeclareRefVar(CircleMasksMap, CircleMasks);
@@ -390,7 +373,6 @@ DeclareVar(bool, NativeNotifications);
 DeclareVar(int, NotificationsCount);
 DeclareVar(Notify::ScreenCorner, NotificationsCorner);
 DeclareVar(bool, NotificationsDemoIsShown);
-DeclareRefVar(base::Observable<Notify::ChangeType>, NotifySettingsChanged);
 
 DeclareVar(DBIConnectionType, ConnectionType);
 DeclareVar(bool, TryIPv6);
@@ -402,6 +384,8 @@ DeclareRefVar(base::Observable<void>, ChooseCustomLang);
 DeclareVar(int, AutoLock);
 DeclareVar(bool, LocalPasscode);
 DeclareRefVar(base::Observable<void>, LocalPasscodeChanged);
+
+DeclareRefVar(base::Variable<DBIWorkMode>, WorkMode);
 
 DeclareRefVar(base::Observable<HistoryItem*>, ItemRemoved);
 DeclareRefVar(base::Observable<void>, UnreadCounterUpdate);

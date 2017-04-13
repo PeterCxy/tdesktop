@@ -18,8 +18,6 @@ to link the code of portions of this program with the OpenSSL library.
 Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
 Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
-#include "stdafx.h"
-
 #include "styles/style_overview.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_window.h"
@@ -27,7 +25,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "boxes/addcontactbox.h"
 #include "boxes/confirmbox.h"
 #include "boxes/photocropbox.h"
-#include "ui/filedialog.h"
+#include "core/file_utilities.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/tooltip.h"
 #include "ui/widgets/buttons.h"
@@ -44,6 +42,9 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "history/history_service_layout.h"
 #include "media/media_audio.h"
 #include "observer_peer.h"
+#include "auth_session.h"
+#include "storage/file_download.h"
+#include "ui/widgets/dropdown_menu.h"
 
 // flick scroll taken from http://qt-project.org/doc/qt-4.8/demos-embedded-anomaly-src-flickcharm-cpp.html
 
@@ -61,7 +62,7 @@ OverviewInner::OverviewInner(OverviewWidget *overview, Ui::ScrollArea *scroll, P
 , _cancelSearch(this, st::dialogsCancelSearch)
 , _itemsToBeLoaded(LinksOverviewPerPage * 2)
 , _width(st::windowMinWidth) {
-	subscribe(FileDownload::ImageLoaded(), [this] { update(); });
+	subscribe(AuthSession::Current().downloader().taskFinished(), [this] { update(); });
 	subscribe(Global::RefItemRemoved(), [this](HistoryItem *item) {
 		itemRemoved(item);
 	});
@@ -204,26 +205,26 @@ void OverviewInner::searchReceived(SearchRequestType type, const MTPmessages_Mes
 	}
 
 	if (_searchRequest == req) {
-		const QVector<MTPMessage> *messages = 0;
+		const QVector<MTPMessage> *messages = nullptr;
 		switch (result.type()) {
 		case mtpc_messages_messages: {
-			auto &d(result.c_messages_messages());
+			auto &d = result.c_messages_messages();
 			App::feedUsers(d.vusers);
 			App::feedChats(d.vchats);
-			messages = &d.vmessages.c_vector().v;
+			messages = &d.vmessages.v;
 			_searchedCount = messages->size();
 		} break;
 
 		case mtpc_messages_messagesSlice: {
-			auto &d(result.c_messages_messagesSlice());
+			auto &d = result.c_messages_messagesSlice();
 			App::feedUsers(d.vusers);
 			App::feedChats(d.vchats);
-			messages = &d.vmessages.c_vector().v;
+			messages = &d.vmessages.v;
 			_searchedCount = d.vcount.v;
 		} break;
 
 		case mtpc_messages_channelMessages: {
-			auto &d(result.c_messages_channelMessages());
+			auto &d = result.c_messages_channelMessages();
 			if (_peer && _peer->isChannel()) {
 				_peer->asChannel()->ptsReceived(d.vpts.v);
 			} else {
@@ -231,7 +232,7 @@ void OverviewInner::searchReceived(SearchRequestType type, const MTPmessages_Mes
 			}
 			App::feedUsers(d.vusers);
 			App::feedChats(d.vchats);
-			messages = &d.vmessages.c_vector().v;
+			messages = &d.vmessages.v;
 			_searchedCount = d.vcount.v;
 		} break;
 		}
@@ -742,14 +743,12 @@ void OverviewInner::preloadMore() {
 		if (!_searchRequest) {
 			MTPmessagesFilter filter = (_type == OverviewLinks) ? MTP_inputMessagesFilterUrl() : MTP_inputMessagesFilterDocument();
 			if (!_searchFull) {
-				MTPmessages_Search::Flags flags = 0;
-				_searchRequest = MTP::send(MTPmessages_Search(MTP_flags(flags), _history->peer->input, MTP_string(_searchQuery), filter, MTP_int(0), MTP_int(0), MTP_int(0), MTP_int(_lastSearchId), MTP_int(SearchPerPage)), rpcDone(&OverviewInner::searchReceived, _lastSearchId ? SearchFromOffset : SearchFromStart), rpcFail(&OverviewInner::searchFailed, _lastSearchId ? SearchFromOffset : SearchFromStart));
+				_searchRequest = MTP::send(MTPmessages_Search(MTP_flags(0), _history->peer->input, MTP_string(_searchQuery), filter, MTP_int(0), MTP_int(0), MTP_int(0), MTP_int(_lastSearchId), MTP_int(SearchPerPage)), rpcDone(&OverviewInner::searchReceived, _lastSearchId ? SearchFromOffset : SearchFromStart), rpcFail(&OverviewInner::searchFailed, _lastSearchId ? SearchFromOffset : SearchFromStart));
 				if (!_lastSearchId) {
 					_searchQueries.insert(_searchRequest, _searchQuery);
 				}
 			} else if (_migrated && !_searchFullMigrated) {
-				MTPmessages_Search::Flags flags = 0;
-				_searchRequest = MTP::send(MTPmessages_Search(MTP_flags(flags), _migrated->peer->input, MTP_string(_searchQuery), filter, MTP_int(0), MTP_int(0), MTP_int(0), MTP_int(_lastSearchMigratedId), MTP_int(SearchPerPage)), rpcDone(&OverviewInner::searchReceived, _lastSearchMigratedId ? SearchMigratedFromOffset : SearchMigratedFromStart), rpcFail(&OverviewInner::searchFailed, _lastSearchMigratedId ? SearchMigratedFromOffset : SearchMigratedFromStart));
+				_searchRequest = MTP::send(MTPmessages_Search(MTP_flags(0), _migrated->peer->input, MTP_string(_searchQuery), filter, MTP_int(0), MTP_int(0), MTP_int(0), MTP_int(_lastSearchMigratedId), MTP_int(SearchPerPage)), rpcDone(&OverviewInner::searchReceived, _lastSearchMigratedId ? SearchMigratedFromOffset : SearchMigratedFromStart), rpcFail(&OverviewInner::searchFailed, _lastSearchMigratedId ? SearchMigratedFromOffset : SearchMigratedFromStart));
 			}
 		}
 	} else if (App::main()) {
@@ -1440,7 +1439,7 @@ void OverviewInner::showContextInFolder() {
 	if (auto lnkDocument = dynamic_cast<DocumentClickHandler*>(_contextMenuLnk.data())) {
 		auto filepath = lnkDocument->document()->filepath(DocumentData::FilePathResolveChecked);
 		if (!filepath.isEmpty()) {
-			psShowInFolder(filepath);
+			File::ShowInFolder(filepath);
 		}
 	}
 }
@@ -1468,9 +1467,8 @@ bool OverviewInner::onSearchMessages(bool searchCache) {
 	} else if (_searchQuery != q) {
 		_searchQuery = q;
 		_searchFull = _searchFullMigrated = false;
-		MTPmessages_Search::Flags flags = 0;
-		MTPmessagesFilter filter = (_type == OverviewLinks) ? MTP_inputMessagesFilterUrl() : MTP_inputMessagesFilterDocument();
-		_searchRequest = MTP::send(MTPmessages_Search(MTP_flags(flags), _history->peer->input, MTP_string(_searchQuery), filter, MTP_int(0), MTP_int(0), MTP_int(0), MTP_int(0), MTP_int(SearchPerPage)), rpcDone(&OverviewInner::searchReceived, SearchFromStart), rpcFail(&OverviewInner::searchFailed, SearchFromStart));
+		auto filter = (_type == OverviewLinks) ? MTP_inputMessagesFilterUrl() : MTP_inputMessagesFilterDocument();
+		_searchRequest = MTP::send(MTPmessages_Search(MTP_flags(0), _history->peer->input, MTP_string(_searchQuery), filter, MTP_int(0), MTP_int(0), MTP_int(0), MTP_int(0), MTP_int(SearchPerPage)), rpcDone(&OverviewInner::searchReceived, SearchFromStart), rpcFail(&OverviewInner::searchFailed, SearchFromStart));
 		_searchQueries.insert(_searchRequest, _searchQuery);
 	}
 	return false;
@@ -1898,13 +1896,23 @@ OverviewInner::~OverviewInner() {
 	clear();
 }
 
-OverviewWidget::OverviewWidget(QWidget *parent, PeerData *peer, MediaOverviewType type) : TWidget(parent)
+OverviewWidget::OverviewWidget(QWidget *parent, gsl::not_null<Window::Controller*> controller, PeerData *peer, MediaOverviewType type) : TWidget(parent)
+, _controller(controller)
+, _topBar(this, _controller)
 , _scroll(this, st::settingsScroll, false)
+, _mediaType(this, st::defaultDropdownMenu)
 , _topShadow(this, st::shadowFg) {
 	_inner = _scroll->setOwnedWidget(object_ptr<OverviewInner>(this, _scroll, peer, type));
 	_scroll->move(0, 0);
 	_inner->move(0, 0);
 
+	connect(_topBar, &Window::TopBarWidget::clicked, this, [this] { topBarClick(); });
+
+	_mediaType->hide();
+	_mediaType->setOrigin(Ui::PanelAnimation::Origin::TopRight);
+	_topBar->mediaTypeButton()->installEventFilter(_mediaType);
+
+	_topBar->show();
 	_scroll->show();
 	connect(_scroll, SIGNAL(scrolled()), this, SLOT(onScroll()));
 
@@ -1919,7 +1927,7 @@ void OverviewWidget::clear() {
 }
 
 void OverviewWidget::onScroll() {
-	MTP::clearLoaderPriorities();
+	AuthSession::Current().downloader().clearPriorities();
 	int32 preloadThreshold = _scroll->height() * 5;
 	bool needToPreload = false;
 	do {
@@ -1937,11 +1945,14 @@ void OverviewWidget::onScroll() {
 }
 
 void OverviewWidget::resizeEvent(QResizeEvent *e) {
+	_topBar->setGeometryToLeft(0, 0, width(), st::topBarHeight);
+	auto scrollAreaTop = _topBar->bottomNoMargins();
+
 	_noDropResizeIndex = true;
-	int32 st = _scroll->scrollTop();
-	_scroll->resize(size());
-	int32 newScrollTop = _inner->resizeToWidth(width(), st, height());
-	if (int32 addToY = App::main() ? App::main()->contentScrollAddToY() : 0) {
+	auto st = _scroll->scrollTop();
+	_scroll->setGeometryToLeft(0, scrollAreaTop, width(), height() - scrollAreaTop);
+	auto newScrollTop = _inner->resizeToWidth(width(), st, height() - _topBar->height());
+	if (auto addToY = App::main() ? App::main()->contentScrollAddToY() : 0) {
 		newScrollTop += addToY;
 	}
 	if (newScrollTop != _scroll->scrollTop()) {
@@ -1950,7 +1961,9 @@ void OverviewWidget::resizeEvent(QResizeEvent *e) {
 	_noDropResizeIndex = false;
 
 	_topShadow->resize(width() - ((!Adaptive::OneColumn() && !_inGrab) ? st::lineWidth : 0), st::lineWidth);
-	_topShadow->moveToLeft((!Adaptive::OneColumn() && !_inGrab) ? st::lineWidth : 0, 0);
+	_topShadow->moveToLeft((!Adaptive::OneColumn() && !_inGrab) ? st::lineWidth : 0, _topBar->bottomNoMargins());
+
+	_mediaType->moveToRight(0, scrollAreaTop);
 }
 
 void OverviewWidget::paintEvent(QPaintEvent *e) {
@@ -1960,18 +1973,17 @@ void OverviewWidget::paintEvent(QPaintEvent *e) {
 	auto progress = _a_show.current(getms(), 1.);
 	if (_a_show.animating()) {
 		auto retina = cIntRetinaFactor();
-		auto inCacheTop = st::topBarHeight;
 		auto fromLeft = (_showDirection == Window::SlideDirection::FromLeft);
 		auto coordUnder = fromLeft ? anim::interpolate(-st::slideShift, 0, progress) : anim::interpolate(0, -st::slideShift, progress);
 		auto coordOver = fromLeft ? anim::interpolate(0, width(), progress) : anim::interpolate(width(), 0, progress);
 		auto shadow = fromLeft ? (1. - progress) : progress;
 		if (coordOver > 0) {
-			p.drawPixmap(QRect(0, 0, coordOver, height()), _cacheUnder, QRect(-coordUnder * retina, inCacheTop * retina, coordOver * retina, height() * retina));
+			p.drawPixmap(QRect(0, 0, coordOver, height()), _cacheUnder, QRect(-coordUnder * retina, 0, coordOver * retina, height() * retina));
 			p.setOpacity(shadow);
 			p.fillRect(0, 0, coordOver, height(), st::slideFadeOutBg);
 			p.setOpacity(1);
 		}
-		p.drawPixmap(QRect(coordOver, 0, _cacheOver.width() / retina, height()), _cacheOver, QRect(0, inCacheTop * retina, _cacheOver.width(), height() * retina));
+		p.drawPixmap(QRect(coordOver, 0, _cacheOver.width() / retina, height()), _cacheOver, QRect(0, 0, _cacheOver.width(), height() * retina));
 		p.setOpacity(shadow);
 		st::slideShadow.fill(p, QRect(coordOver - st::slideShadow.width(), 0, st::slideShadow.width(), height()));
 		return;
@@ -1997,24 +2009,6 @@ void OverviewWidget::scrollReset() {
 }
 
 bool OverviewWidget::paintTopBar(Painter &p, int decreaseWidth) {
-	if (_a_show.animating()) {
-		auto progress = _a_show.current(1.);
-		auto retina = cIntRetinaFactor();
-		auto fromLeft = (_showDirection == Window::SlideDirection::FromLeft);
-		auto coordUnder = fromLeft ? anim::interpolate(-st::slideShift, 0, progress) : anim::interpolate(0, -st::slideShift, progress);
-		auto coordOver = fromLeft ? anim::interpolate(0, width(), progress) : anim::interpolate(width(), 0, progress);
-		auto shadow = fromLeft ? (1. - progress) : progress;
-		if (coordOver > 0) {
-			p.drawPixmap(QRect(0, 0, coordOver, st::topBarHeight), _cacheUnder, QRect(-coordUnder * retina, 0, coordOver * retina, st::topBarHeight * retina));
-			p.setOpacity(shadow);
-			p.fillRect(0, 0, coordOver, st::topBarHeight, st::slideFadeOutBg);
-			p.setOpacity(1);
-		}
-		p.drawPixmap(QRect(coordOver, 0, _cacheOver.width() / retina, st::topBarHeight), _cacheOver, QRect(0, 0, _cacheOver.width(), st::topBarHeight * retina));
-		p.setOpacity(shadow);
-		st::slideShadow.fill(p, QRect(coordOver - st::slideShadow.width(), 0, st::slideShadow.width(), st::topBarHeight));
-		return false;
-	}
 	st::topBarBack.paint(p, (st::topBarArrowPadding.left() - st::topBarBack.width()) / 2, (st::topBarHeight - st::topBarBack.height()) / 2, width());
 	p.setFont(st::defaultLightButton.font);
 	p.setPen(st::defaultLightButton.textFg);
@@ -2056,7 +2050,7 @@ void OverviewWidget::switchType(MediaOverviewType type) {
 	_header = _header.toUpper();
 
 	noSelectingScroll();
-	App::main()->topBar()->showSelected(0);
+	_topBar->showSelected(0);
 	updateTopBarSelection();
 	scrollReset();
 
@@ -2066,14 +2060,27 @@ void OverviewWidget::switchType(MediaOverviewType type) {
 	activate();
 }
 
+bool OverviewWidget::showMediaTypeSwitch() const {
+	for (int32 i = 0; i < OverviewCount; ++i) {
+		if (!(_mediaTypeMask & ~(1 << i))) {
+			return false;
+		}
+	}
+	return true;
+}
+
+bool OverviewWidget::contentOverlapped(const QRect &globalRect) {
+	return _mediaType->overlaps(globalRect);
+}
+
 void OverviewWidget::updateTopBarSelection() {
 	int32 selectedForForward, selectedForDelete;
 	_inner->getSelectionState(selectedForForward, selectedForDelete);
 	_selCount = selectedForForward ? selectedForForward : selectedForDelete;
 	_inner->setSelectMode(_selCount > 0);
 	if (App::main()) {
-		App::main()->topBar()->showSelected(_selCount > 0 ? _selCount : 0, (selectedForDelete == selectedForForward));
-		App::main()->topBar()->update();
+		_topBar->showSelected(_selCount > 0 ? _selCount : 0, (selectedForDelete == selectedForForward));
+		_topBar->update();
 	}
 	if (App::wnd() && !Ui::isLayerShown()) {
 		_inner->activate();
@@ -2125,11 +2132,12 @@ void OverviewWidget::showAnimated(Window::SlideDirection direction, const Window
 
 	_cacheUnder = params.oldContentCache;
 	show();
+	_topBar->showAll();
 	_topShadow->setVisible(params.withTopBarShadow ? false : true);
 	_cacheOver = App::main()->grabForShowAnimation(params);
 	_topShadow->setVisible(params.withTopBarShadow ? true : false);
-	App::main()->topBar()->startAnim();
 
+	_topBar->hide();
 	_scrollSetAfterShow = _scroll->scrollTop();
 	_scroll->hide();
 
@@ -2138,25 +2146,27 @@ void OverviewWidget::showAnimated(Window::SlideDirection direction, const Window
 	}
 	_a_show.start([this] { animationCallback(); }, 0., 1., st::slideDuration, Window::SlideAnimation::transition());
 
-	App::main()->topBar()->update();
+	_backAnimationButton.create(this);
+	_backAnimationButton->setClickedCallback([this] { topBarClick(); });
+	_backAnimationButton->setGeometry(_topBar->geometry());
+	_backAnimationButton->show();
 
 	activate();
 }
 
 void OverviewWidget::animationCallback() {
 	update();
-	App::main()->topBar()->update();
 	if (!_a_show.animating()) {
 		_topShadow->show();
-
 		_cacheUnder = _cacheOver = QPixmap();
-		App::main()->topBar()->stopAnim();
-
 		doneShow();
 	}
 }
 
 void OverviewWidget::doneShow() {
+	_topBar->animationFinished();
+	_backAnimationButton.destroy();
+	_topBar->show();
 	_scroll->show();
 	_scroll->scrollToY(_scrollSetAfterShow);
 	activate();
@@ -2167,6 +2177,47 @@ void OverviewWidget::mediaOverviewUpdated(const Notify::PeerUpdate &update) {
 	if ((peer() == update.peer || migratePeer() == update.peer) && (update.mediaTypesMask & (1 << type()))) {
 		_inner->mediaOverviewUpdated();
 		onScroll();
+		updateTopBarSelection();
+	}
+	int32 mask = 0;
+	History *h = update.peer ? App::historyLoaded(update.peer->migrateTo() ? update.peer->migrateTo() : update.peer) : nullptr;
+	History *m = (update.peer && update.peer->migrateFrom()) ? App::historyLoaded(update.peer->migrateFrom()->id) : 0;
+	if (h) {
+		for (int32 i = 0; i < OverviewCount; ++i) {
+			if (!h->overview[i].isEmpty() || h->overviewCount(i) > 0 || i == type()) {
+				mask |= (1 << i);
+			} else if (m && (!m->overview[i].isEmpty() || m->overviewCount(i) > 0)) {
+				mask |= (1 << i);
+			}
+		}
+	}
+	if (mask != _mediaTypeMask) {
+		auto typeLabel = [](MediaOverviewType type) -> QString {
+			switch (type) {
+			case OverviewPhotos: return lang(lng_media_type_photos);
+			case OverviewVideos: return lang(lng_media_type_videos);
+			case OverviewMusicFiles: return lang(lng_media_type_songs);
+			case OverviewFiles: return lang(lng_media_type_files);
+			case OverviewVoiceFiles: return lang(lng_media_type_audios);
+			case OverviewLinks: return lang(lng_media_type_links);
+			}
+			return QString();
+		};
+		_mediaType->clearActions();
+		for (auto i = 0; i != OverviewCount; ++i) {
+			if (mask & (1 << i)) {
+				auto type = static_cast<MediaOverviewType>(i);
+				auto label = typeLabel(type);
+				if (!label.isEmpty()) {
+					_mediaType->addAction(label, [this, type] {
+						switchType(type);
+						_mediaType->hideAnimated();
+					});
+				}
+			}
+		}
+		_mediaTypeMask = mask;
+		_mediaType->move(width() - _mediaType->width(), st::topBarHeight);
 		updateTopBarSelection();
 	}
 }

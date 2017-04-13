@@ -18,7 +18,6 @@ to link the code of portions of this program with the OpenSSL library.
 Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
 Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
-#include "stdafx.h"
 #include "window/top_bar_widget.h"
 
 #include "styles/style_window.h"
@@ -28,14 +27,16 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "mainwindow.h"
 #include "shortcuts.h"
 #include "lang.h"
-#include "ui/buttons/peer_avatar_button.h"
+#include "ui/special_buttons.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/dropdown_menu.h"
 #include "dialogs/dialogs_layout.h"
+#include "window/window_controller.h"
 
 namespace Window {
 
-TopBarWidget::TopBarWidget(MainWidget *w) : TWidget(w)
+TopBarWidget::TopBarWidget(QWidget *parent, gsl::not_null<Window::Controller*> controller) : TWidget(parent)
+, _controller(controller)
 , _clearSelection(this, lang(lng_selected_clear), st::topBarClearButton)
 , _forward(this, lang(lng_selected_forward), st::defaultActiveButton)
 , _delete(this, lang(lng_selected_delete), st::defaultActiveButton)
@@ -52,12 +53,12 @@ TopBarWidget::TopBarWidget(MainWidget *w) : TWidget(w)
 	_search->setClickedCallback([this] { onSearch(); });
 	_menuToggle->setClickedCallback([this] { showMenu(); });
 
-	subscribe(w->searchInPeerChanged(), [this](PeerData *peer) {
+	subscribe(_controller->searchInPeerChanged(), [this](PeerData *peer) {
 		_searchInPeer = peer;
 		auto historyPeer = App::main() ? App::main()->historyPeer() : nullptr;
 		_search->setForceRippled(historyPeer && historyPeer == _searchInPeer);
 	});
-	subscribe(w->historyPeerChanged(), [this](PeerData *peer) {
+	subscribe(_controller->historyPeerChanged(), [this](PeerData *peer) {
 		_search->setForceRippled(peer && peer == _searchInPeer, Ui::IconButton::SetForceRippledWay::SkipAnimation);
 		update();
 	});
@@ -126,8 +127,8 @@ void TopBarWidget::showMenu() {
 					}
 				}));
 				_menuToggle->installEventFilter(_menu);
-				App::main()->fillPeerMenu(peer, [this](const QString &text, base::lambda<void()> &&callback) {
-					return _menu->addAction(text, std_::move(callback));
+				App::main()->fillPeerMenu(peer, [this](const QString &text, base::lambda<void()> callback) {
+					return _menu->addAction(text, std::move(callback));
 				}, false);
 				_menu->moveToRight(st::topBarMenuPosition.x(), st::topBarMenuPosition.y());
 				_menu->showAnimated(Ui::PanelAnimation::Origin::TopRight);
@@ -144,11 +145,11 @@ bool TopBarWidget::eventFilter(QObject *obj, QEvent *e) {
 			return true;
 
 		case QEvent::Enter:
-			main()->setMembersShowAreaActive(true);
+			App::main()->setMembersShowAreaActive(true);
 			break;
 
 		case QEvent::Leave:
-			main()->setMembersShowAreaActive(false);
+			App::main()->setMembersShowAreaActive(false);
 			break;
 		}
 	}
@@ -179,7 +180,7 @@ void TopBarWidget::paintEvent(QPaintEvent *e) {
 		if (!_search->isHidden()) {
 			decreaseWidth += _search->width();
 		}
-		auto paintCounter = main()->paintTopBar(p, decreaseWidth, ms);
+		auto paintCounter = App::main()->paintTopBar(p, decreaseWidth, ms);
 		p.restore();
 
 		if (paintCounter) {
@@ -257,33 +258,12 @@ void TopBarWidget::updateControlsGeometry() {
 	_search->moveToRight(_info->isHidden() ? _menuToggle->width() : _info->width(), otherButtonsTop);
 }
 
-void TopBarWidget::startAnim() {
-	_info->hide();
-	_clearSelection->hide();
-	_delete->hide();
-	_forward->hide();
-	_mediaType->hide();
-	_search->hide();
-	_menuToggle->hide();
-	_menu.destroy();
-	if (_membersShowArea) {
-		_membersShowArea->hide();
-	}
-
-	_animating = true;
-}
-
-void TopBarWidget::stopAnim() {
-	_animating = false;
+void TopBarWidget::animationFinished() {
 	updateMembersShowArea();
 	showAll();
 }
 
 void TopBarWidget::showAll() {
-	if (_animating) {
-		updateControlsGeometry();
-		return;
-	}
 	auto historyPeer = App::main() ? App::main()->historyPeer() : nullptr;
 	auto overviewPeer = App::main() ? App::main()->overviewPeer() : nullptr;
 
@@ -291,7 +271,7 @@ void TopBarWidget::showAll() {
 	_delete->setVisible(_canDelete);
 	_forward->show();
 
-	_mediaType->setVisible(App::main() ? App::main()->mediaTypeSwitch() : false);
+	_mediaType->setVisible(App::main() ? App::main()->showMediaTypeSwitch() : false);
 	if (historyPeer && !overviewPeer) {
 		if (Adaptive::OneColumn() || !App::main()->stackIsEmpty()) {
 			_info->setPeer(historyPeer);
@@ -331,7 +311,7 @@ void TopBarWidget::updateMembersShowArea() {
 	};
 	if (!membersShowAreaNeeded()) {
 		if (_membersShowArea) {
-			main()->setMembersShowAreaActive(false);
+			App::main()->setMembersShowAreaActive(false);
 			_membersShowArea.destroy();
 		}
 		return;
@@ -396,10 +376,6 @@ void TopBarWidget::updateAdaptiveLayout() {
 
 Ui::RoundButton *TopBarWidget::mediaTypeButton() {
 	return _mediaType;
-}
-
-MainWidget *TopBarWidget::main() {
-	return static_cast<MainWidget*>(parentWidget());
 }
 
 } // namespace Window

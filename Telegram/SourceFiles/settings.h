@@ -61,9 +61,6 @@ DeclareSetting(uint64, RealBetaVersion);
 DeclareSetting(QByteArray, BetaPrivateKey);
 
 DeclareSetting(bool, TestMode);
-inline QString cInlineGifBotUsername() {
-	return cTestMode() ? qstr("contextbot") : qstr("gif");
-}
 DeclareSetting(QString, LoggedPhoneNumber);
 DeclareSetting(bool, AutoStart);
 DeclareSetting(bool, StartMinimized);
@@ -75,7 +72,6 @@ enum LaunchMode {
 	LaunchModeAutoStart,
 	LaunchModeFixPrevious,
 	LaunchModeCleanup,
-	LaunchModeShowCrash,
 };
 DeclareReadSetting(LaunchMode, LaunchMode);
 DeclareSetting(QString, WorkingDir);
@@ -102,7 +98,6 @@ struct TWindowPos {
 };
 DeclareSetting(TWindowPos, WindowPos);
 DeclareSetting(bool, SupportTray);
-DeclareSetting(DBIWorkMode, WorkMode);
 DeclareSetting(bool, SeenTrayTooltip);
 DeclareSetting(bool, RestartingUpdate);
 DeclareSetting(bool, Restarting);
@@ -161,8 +156,6 @@ DeclareRefSetting(RecentEmojiPack, RecentEmoji);
 DeclareSetting(RecentEmojiPreload, RecentEmojiPreload);
 DeclareRefSetting(EmojiColorVariants, EmojiVariants);
 
-RecentEmojiPack &cGetRecentEmoji();
-
 class DocumentData;
 typedef QVector<DocumentData*> StickerPack;
 
@@ -179,7 +172,6 @@ typedef QMap<EmojiPtr, StickerPack> StickersByEmojiMap;
 typedef QVector<DocumentData*> SavedGifs;
 DeclareRefSetting(SavedGifs, SavedGifs);
 DeclareSetting(TimeMs, LastSavedGifsUpdate);
-DeclareSetting(bool, ShowingSavedGifs);
 
 typedef QList<QPair<QString, ushort> > RecentHashtagPack;
 DeclareRefSetting(RecentHashtagPack, RecentWriteHashtags);
@@ -258,9 +250,6 @@ DeclareReadSetting(DBIPlatform, Platform);
 DeclareReadSetting(QString, PlatformString);
 DeclareReadSetting(bool, IsElCapitan);
 DeclareReadSetting(QUrl, UpdateURL);
-
-DeclareSetting(bool, ContactsReceived);
-DeclareSetting(bool, DialogsReceived);
 
 DeclareSetting(int, OtherOnline);
 

@@ -18,7 +18,6 @@ to link the code of portions of this program with the OpenSSL library.
 Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
 Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
-#include "stdafx.h"
 #include "lang.h"
 
 #include "media/media_clip_reader.h"
@@ -27,12 +26,13 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "application.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
-#include "ui/filedialog.h"
+#include "core/file_utilities.h"
 #include "styles/style_boxes.h"
 #include "styles/style_widgets.h"
 #include "styles/style_stickers.h"
 #include "ui/widgets/shadow.h"
 #include "window/window_main_menu.h"
+#include "auth_session.h"
 
 namespace {
 
@@ -45,8 +45,8 @@ public:
 	BackgroundWidget(QWidget *parent) : TWidget(parent) {
 	}
 
-	void setDoneCallback(base::lambda<void()> &&callback) {
-		_doneCallback = std_::move(callback);
+	void setDoneCallback(base::lambda<void()> callback) {
+		_doneCallback = std::move(callback);
 	}
 
 	void setLayerBoxes(const QRect &specialLayerBox, const QRect &layerBox);
@@ -98,10 +98,10 @@ private:
 };
 
 void LayerStackWidget::BackgroundWidget::setCacheImages(QPixmap &&bodyCache, QPixmap &&mainMenuCache, QPixmap &&specialLayerCache, QPixmap &&layerCache) {
-	_bodyCache = std_::move(bodyCache);
-	_mainMenuCache = std_::move(mainMenuCache);
-	_specialLayerCache = std_::move(specialLayerCache);
-	_layerCache = std_::move(layerCache);
+	_bodyCache = std::move(bodyCache);
+	_mainMenuCache = std::move(mainMenuCache);
+	_specialLayerCache = std::move(specialLayerCache);
+	_layerCache = std::move(layerCache);
 	_specialLayerCacheBox = _specialLayerBox;
 	_layerCacheBox = _layerBox;
 	setAttribute(Qt::WA_OpaquePaintEvent, !_bodyCache.isNull());
@@ -259,7 +259,7 @@ void LayerStackWidget::BackgroundWidget::paintEvent(QPaintEvent *e) {
 		// in the transparent special layer cache corners after filling special layer
 		// rect above its cache with alpha_current opacity.
 		auto region = QRegion(bg) - specialLayerBox;
-		for_const (auto rect, region.rects()) {
+		for (auto rect : region.rects()) {
 			p.fillRect(rect, st::layerBg);
 		}
 		p.setOpacity((bgOpacity - overSpecialOpacity) / (1. - (overSpecialOpacity * st::layerBg->c.alphaF())));
@@ -410,7 +410,7 @@ void LayerStackWidget::setCacheImages() {
 	}
 	setAttribute(Qt::WA_OpaquePaintEvent, !bodyCache.isNull());
 	updateLayerBoxes();
-	_background->setCacheImages(std_::move(bodyCache), std_::move(mainMenuCache), std_::move(specialLayerCache), std_::move(layerCache));
+	_background->setCacheImages(std::move(bodyCache), std::move(mainMenuCache), std::move(specialLayerCache), std::move(layerCache));
 }
 
 void LayerStackWidget::onLayerClosed(LayerWidget *layer) {
@@ -522,7 +522,7 @@ void LayerStackWidget::resizeEvent(QResizeEvent *e) {
 }
 
 void LayerStackWidget::showBox(object_ptr<BoxContent> box) {
-	auto pointer = pushBox(std_::move(box));
+	auto pointer = pushBox(std::move(box));
 	while (!_layers.isEmpty() && _layers.front() != pointer) {
 		auto removingLayer = _layers.front();
 		_layers.pop_front();
@@ -537,6 +537,7 @@ void LayerStackWidget::showBox(object_ptr<BoxContent> box) {
 void LayerStackWidget::prepareForAnimation() {
 	if (isHidden()) {
 		show();
+		App::wnd()->enableGifPauseReason(Window::GifPauseReason::Layer);
 	}
 	if (_mainMenu) {
 		_mainMenu->hide();
@@ -565,6 +566,7 @@ void LayerStackWidget::animationDone() {
 	}
 	if (hidden) {
 		App::wnd()->layerFinishedHide(this);
+		App::wnd()->disableGifPauseReason(Window::GifPauseReason::Layer);
 	} else {
 		showFinished();
 	}
@@ -590,9 +592,9 @@ void LayerStackWidget::showFinished() {
 }
 
 void LayerStackWidget::showSpecialLayer(object_ptr<LayerWidget> layer) {
-	startAnimation([this, layer = std_::move(layer)]() mutable {
+	startAnimation([this, layer = std::move(layer)]() mutable {
 		_specialLayer.destroyDelayed();
-		_specialLayer = std_::move(layer);
+		_specialLayer = std::move(layer);
 		initChildLayer(_specialLayer);
 	}, [this] {
 		clearLayers();
@@ -612,7 +614,7 @@ void LayerStackWidget::showMainMenu() {
 }
 
 void LayerStackWidget::appendBox(object_ptr<BoxContent> box) {
-	pushBox(std_::move(box));
+	pushBox(std::move(box));
 }
 
 LayerWidget *LayerStackWidget::pushBox(object_ptr<BoxContent> box) {
@@ -621,7 +623,7 @@ LayerWidget *LayerStackWidget::pushBox(object_ptr<BoxContent> box) {
 		if (oldLayer->inFocusChain()) setFocus();
 		oldLayer->hide();
 	}
-	auto layer = object_ptr<AbstractBox>(this, std_::move(box));
+	auto layer = object_ptr<AbstractBox>(this, std::move(box));
 	_layers.push_back(layer);
 	initChildLayer(layer);
 
@@ -641,9 +643,9 @@ LayerWidget *LayerStackWidget::pushBox(object_ptr<BoxContent> box) {
 
 void LayerStackWidget::prependBox(object_ptr<BoxContent> box) {
 	if (_layers.empty()) {
-		return showBox(std_::move(box));
+		return showBox(std::move(box));
 	}
-	auto layer = object_ptr<AbstractBox>(this, std_::move(box));
+	auto layer = object_ptr<AbstractBox>(this, std::move(box));
 	layer->hide();
 	_layers.push_front(layer);
 	initChildLayer(layer);
@@ -721,7 +723,7 @@ LayerStackWidget::~LayerStackWidget() {
 MediaPreviewWidget::MediaPreviewWidget(QWidget *parent) : TWidget(parent)
 , _emojiSize(Ui::Emoji::Size(Ui::Emoji::Index() + 1) / cIntRetinaFactor()) {
 	setAttribute(Qt::WA_TransparentForMouseEvents);
-	subscribe(FileDownload::ImageLoaded(), [this] { update(); });
+	subscribe(AuthSession::CurrentDownloaderTaskFinished(), [this] { update(); });
 }
 
 void MediaPreviewWidget::paintEvent(QPaintEvent *e) {
@@ -734,6 +736,7 @@ void MediaPreviewWidget::paintEvent(QPaintEvent *e) {
 	if (!_a_shown.animating()) {
 		if (_hiding) {
 			hide();
+			App::wnd()->disableGifPauseReason(Window::GifPauseReason::MediaPreview);
 			return;
 		}
 	} else {
@@ -788,7 +791,10 @@ void MediaPreviewWidget::showPreview(PhotoData *photo) {
 void MediaPreviewWidget::startShow() {
 	_cache = QPixmap();
 	if (isHidden() || _a_shown.animating()) {
-		if (isHidden()) show();
+		if (isHidden()) {
+			show();
+			App::wnd()->enableGifPauseReason(Window::GifPauseReason::MediaPreview);
+		}
 		_hiding = false;
 		_a_shown.start([this] { update(); }, 0., 1., st::stickerPreviewDuration);
 	} else {
@@ -920,8 +926,9 @@ QPixmap MediaPreviewWidget::currentImage() const {
 				}
 			}
 			if (_gif && _gif->started()) {
-				QSize s = currentDimensions();
-				return _gif->current(s.width(), s.height(), s.width(), s.height(), ImageRoundRadius::None, ImageRoundCorner::None, getms());
+				auto s = currentDimensions();
+				auto paused = App::wnd()->isGifPausedAtLeastFor(Window::GifPauseReason::MediaPreview);
+				return _gif->current(s.width(), s.height(), s.width(), s.height(), ImageRoundRadius::None, ImageRoundCorner::None, paused ? 0 : getms());
 			}
 			if (_cacheStatus != CacheThumbLoaded && _document->thumb->loaded()) {
 				QSize s = currentDimensions();

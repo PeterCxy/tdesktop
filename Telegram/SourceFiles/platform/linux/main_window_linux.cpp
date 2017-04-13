@@ -18,16 +18,16 @@ to link the code of portions of this program with the OpenSSL library.
 Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
 Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
-#include "stdafx.h"
 #include "platform/linux/main_window_linux.h"
 
 #include "styles/style_window.h"
 #include "platform/linux/linux_libs.h"
+#include "platform/linux/linux_desktop_environment.h"
 #include "platform/platform_notifications_manager.h"
 #include "mainwindow.h"
 #include "application.h"
 #include "lang.h"
-#include "localstorage.h"
+#include "storage/localstorage.h"
 
 namespace Platform {
 namespace {
@@ -164,8 +164,10 @@ static gboolean _trayIconCheck(gpointer/* pIn*/) {
 		if (Libs::gtk_status_icon_is_embedded(_trayIcon)) {
 			trayIconChecked = true;
 			cSetSupportTray(true);
+			if (Global::started()) {
+				Global::RefWorkMode().setForced(Global::WorkMode().value(), true);
+			}
 			if (App::wnd()) {
-				App::wnd()->psUpdateWorkmode();
 				Notify::unreadCounterUpdated();
 				App::wnd()->updateTrayMenu();
 			}
@@ -196,7 +198,7 @@ void MainWindow::initHook() {
 }
 
 bool MainWindow::hasTrayIcon() const {
-	return trayIcon || ((useAppIndicator || (useStatusIcon && trayIconChecked)) && (cWorkMode() != dbiwmWindowOnly));
+	return trayIcon || ((useAppIndicator || (useStatusIcon && trayIconChecked)) && (Global::WorkMode().value() != dbiwmWindowOnly));
 }
 
 void MainWindow::psStatusIconCheck() {
@@ -272,10 +274,10 @@ void MainWindow::psSetupTrayIcon() {
 	}
 }
 
-void MainWindow::psUpdateWorkmode() {
+void MainWindow::workmodeUpdated(DBIWorkMode mode) {
 	if (!cSupportTray()) return;
 
-	if (cWorkMode() == dbiwmWindowOnly) {
+	if (mode == dbiwmWindowOnly) {
 		if (noQtTrayIcon) {
 			if (useAppIndicator) {
 				Libs::app_indicator_set_status(_trayIndicator, APP_INDICATOR_STATUS_PASSIVE);
@@ -372,14 +374,11 @@ void MainWindow::updateIconCounters() {
 	}
 }
 
-bool MainWindow::psHasNativeNotifications() {
-	return Notifications::supported();
-}
-
 void MainWindow::LibsLoaded() {
-	QStringList cdesktop = QString(getenv("XDG_CURRENT_DESKTOP")).toLower().split(':');
-	noQtTrayIcon = (cdesktop.contains(qstr("pantheon"))) || (cdesktop.contains(qstr("gnome")));
-	tryAppIndicator = (cdesktop.contains(qstr("xfce")) || cdesktop.contains(qstr("unity")));
+	noQtTrayIcon = !DesktopEnvironment::TryQtTrayIcon();
+	tryAppIndicator = DesktopEnvironment::PreferAppIndicatorTrayIcon();
+
+	LOG(("Tray Icon: Try Qt = %1, Prefer appindicator = %2").arg(Logs::b(!noQtTrayIcon)).arg(Logs::b(tryAppIndicator)));
 
 	if (noQtTrayIcon) cSetSupportTray(false);
 
@@ -441,6 +440,7 @@ void MainWindow::LibsLoaded() {
 
 void MainWindow::psCreateTrayIcon() {
 	if (!noQtTrayIcon) {
+		LOG(("Tray Icon: Using Qt tray icon, available: %1").arg(Logs::b(QSystemTrayIcon::isSystemTrayAvailable())));
 		cSetSupportTray(QSystemTrayIcon::isSystemTrayAvailable());
 		return;
 	}
@@ -455,7 +455,7 @@ void MainWindow::psCreateTrayIcon() {
 				QByteArray path = QFile::encodeName(iconFile.absoluteFilePath());
 				_trayIndicator = Libs::app_indicator_new("Telegram Desktop", path.constData(), APP_INDICATOR_CATEGORY_APPLICATION_STATUS);
 				if (_trayIndicator) {
-					LOG(("Using appindicator tray icon."));
+					LOG(("Tray Icon: Using appindicator tray icon."));
 				} else {
 					DEBUG_LOG(("Failed to app_indicator_new()!"));
 				}
@@ -488,7 +488,7 @@ void MainWindow::psCreateTrayIcon() {
 					_trayIcon = Libs::gtk_status_icon_new_from_pixbuf(_trayPixbuf);
 				}
 				if (_trayIcon) {
-					LOG(("Using GTK status tray icon."));
+					LOG(("Tray Icon: Using GTK status tray icon."));
 
 					Libs::g_signal_connect_helper(_trayIcon, "popup-menu", GCallback(_trayIconPopup), _trayMenu);
 					Libs::g_signal_connect_helper(_trayIcon, "activate", GCallback(_trayIconActivate), _trayMenu);
@@ -508,10 +508,11 @@ void MainWindow::psCreateTrayIcon() {
 		}
 	}
 	if (!useStatusIcon && !useAppIndicator) {
+		LOG(("Tray Icon: Not able to use any tray icon :("));
 		if (_trayMenu) {
 			Libs::g_object_ref_sink(_trayMenu);
 			Libs::g_object_unref(_trayMenu);
-			_trayMenu = 0;
+			_trayMenu = nullptr;
 		}
 	}
 	cSetSupportTray(useAppIndicator);
@@ -519,7 +520,7 @@ void MainWindow::psCreateTrayIcon() {
 		Libs::g_idle_add((GSourceFunc)_trayIconCheck, 0);
 		_psCheckStatusIconTimer.start(100);
 	} else {
-		psUpdateWorkmode();
+		workmodeUpdated(Global::WorkMode().value());
 	}
 }
 
@@ -556,7 +557,7 @@ void MainWindow::psFirstShow() {
 
 	if ((cLaunchMode() == LaunchModeAutoStart && cStartMinimized()) || cStartInTray()) {
 		setWindowState(Qt::WindowMinimized);
-		if (cWorkMode() == dbiwmTrayOnly || cWorkMode() == dbiwmWindowAndTray) {
+		if (Global::WorkMode().value() == dbiwmTrayOnly || Global::WorkMode().value() == dbiwmWindowAndTray) {
 			hide();
 		} else {
 			show();
@@ -576,9 +577,6 @@ void MainWindow::psUpdateSysMenu(Qt::WindowState state) {
 }
 
 void MainWindow::psUpdateMargins() {
-}
-
-void MainWindow::psFlash() {
 }
 
 MainWindow::~MainWindow() {

@@ -18,7 +18,6 @@ to link the code of portions of this program with the OpenSSL library.
 Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
 Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
-#include "stdafx.h"
 #include "ui/widgets/buttons.h"
 
 #include "ui/effects/ripple_animation.h"
@@ -119,7 +118,7 @@ void RippleButton::onStateChanged(State was, StateChangeSource source) {
 
 void RippleButton::ensureRipple() {
 	if (!_ripple) {
-		_ripple = std_::make_unique<RippleAnimation>(_st, prepareRippleMask(), [this] { update(); });
+		_ripple = std::make_unique<RippleAnimation>(_st, prepareRippleMask(), [this] { update(); });
 	}
 }
 
@@ -192,10 +191,10 @@ void FlatButton::paintEvent(QPaintEvent *e) {
 
 class RoundButton::Numbers {
 public:
-	Numbers(const style::RoundButton &st, base::lambda<void()> &&animationCallback);
+	Numbers(const style::RoundButton &st, base::lambda<void()> animationCallback);
 
-	void setWidthChangedCallback(base::lambda<void()> &&callback) {
-		_widthChangedCallback = std_::move(callback);
+	void setWidthChangedCallback(base::lambda<void()> callback) {
+		_widthChangedCallback = std::move(callback);
 	}
 	void setText(const QString &text, int value);
 	void stepAnimation(TimeMs ms);
@@ -235,9 +234,9 @@ private:
 
 };
 
-RoundButton::Numbers::Numbers(const style::RoundButton &st, base::lambda<void()> &&animationCallback)
+RoundButton::Numbers::Numbers(const style::RoundButton &st, base::lambda<void()> animationCallback)
 : _st(st)
-, _animationCallback(std_::move(animationCallback)) {
+, _animationCallback(std::move(animationCallback)) {
 	for (auto ch = '0'; ch != '9'; ++ch) {
 		accumulate_max(_digitWidth, _st.font->m.width(ch));
 	}
@@ -373,18 +372,18 @@ void RoundButton::setNumbersText(const QString &numbersText, int numbers) {
 		_numbers.reset();
 	} else {
 		if (!_numbers) {
-			_numbers = std_::make_unique<Numbers>(_st, [this] { numbersAnimationCallback(); });
+			_numbers = std::make_unique<Numbers>(_st, [this] { numbersAnimationCallback(); });
 		}
 		_numbers->setText(numbersText, numbers);
 	}
 	updateText();
 }
 
-void RoundButton::setWidthChangedCallback(base::lambda<void()> &&callback) {
+void RoundButton::setWidthChangedCallback(base::lambda<void()> callback) {
 	if (!_numbers) {
-		_numbers = std_::make_unique<Numbers>(_st, [this] { numbersAnimationCallback(); });
+		_numbers = std::make_unique<Numbers>(_st, [this] { numbersAnimationCallback(); });
 	}
-	_numbers->setWidthChangedCallback(std_::move(callback));
+	_numbers->setWidthChangedCallback(std::move(callback));
 }
 
 void RoundButton::stepNumbersAnimation(TimeMs ms) {
@@ -431,7 +430,7 @@ void RoundButton::resizeToText() {
 		if (_st.width < innerWidth + (_st.height - _st.font->height)) {
 			auto fullText = _fullText;
 			if (_transform == TextTransform::ToUpper) {
-				fullText = std_::move(fullText).toUpper();
+				fullText = std::move(fullText).toUpper();
 			}
 			_text = _st.font->elided(fullText, qMax(_st.width - (_st.height - _st.font->height), 1));
 			_textWidth = _st.font->width(_text);
@@ -626,34 +625,30 @@ void LeftOutlineButton::paintEvent(QPaintEvent *e) {
 }
 
 CrossButton::CrossButton(QWidget *parent, const style::CrossButton &st) : RippleButton(parent, st.ripple)
-, _st(st) {
+, _st(st)
+, _a_loading(animation(this, &CrossButton::step_loading)) {
 	resize(_st.width, _st.height);
 	setCursor(style::cur_pointer);
 	hide();
 }
 
-void CrossButton::showAnimated() {
-	startAnimation(true);
+void CrossButton::step_loading(TimeMs ms, bool timer) {
+	if (stopLoadingAnimation(ms)) {
+		_a_loading.stop();
+	}
+	if (timer) {
+		update();
+	}
 }
 
-void CrossButton::showFast() {
-	showAnimated();
-	_a_show.finish();
-}
-
-void CrossButton::hideAnimated() {
-	startAnimation(false);
-}
-
-void CrossButton::hideFast() {
-	hideAnimated();
-	_a_show.finish();
-}
-
-void CrossButton::startAnimation(bool shown) {
-	if (_shown == shown) return;
-	_shown = shown;
-	if (isHidden()) show();
+void CrossButton::toggleAnimated(bool visible) {
+	if (_shown == visible) {
+		return;
+	}
+	_shown = visible;
+	if (isHidden()) {
+		show();
+	}
 	_a_show.start([this] { animationCallback(); }, _shown ? 0. : 1., _shown ? 1. : 0., _st.duration);
 }
 
@@ -674,7 +669,43 @@ void CrossButton::paintEvent(QPaintEvent *e) {
 
 	paintRipple(p, _st.crossPosition.x(), _st.crossPosition.y(), ms);
 
-	CrossAnimation::paint(p, _st.cross, over ? _st.crossFgOver : _st.crossFg, _st.crossPosition.x(), _st.crossPosition.y(), width(), shown);
+	auto loading = 0.;
+	if (_a_loading.animating()) {
+		if (stopLoadingAnimation(ms)) {
+			_a_loading.stop();
+		} else {
+			loading = ((ms - _loadingStartMs) % _st.loadingPeriod) / float64(_st.loadingPeriod);
+		}
+	}
+	CrossAnimation::paint(p, _st.cross, over ? _st.crossFgOver : _st.crossFg, _st.crossPosition.x(), _st.crossPosition.y(), width(), shown, loading);
+}
+
+bool CrossButton::stopLoadingAnimation(TimeMs ms) {
+	if (!_loadingStopMs) {
+		return false;
+	}
+	auto stopPeriod = (_loadingStopMs - _loadingStartMs) / _st.loadingPeriod;
+	auto currentPeriod = (ms - _loadingStartMs) / _st.loadingPeriod;
+	if (currentPeriod != stopPeriod) {
+		t_assert(currentPeriod > stopPeriod);
+		return true;
+	}
+	return false;
+}
+
+void CrossButton::setLoadingAnimation(bool enabled) {
+	if (enabled) {
+		_loadingStopMs = 0;
+		if (!_a_loading.animating()) {
+			_loadingStartMs = getms();
+			_a_loading.start();
+		}
+	} else if (_a_loading.animating()) {
+		_loadingStopMs = getms();
+		if (!((_loadingStopMs - _loadingStartMs) % _st.loadingPeriod)) {
+			_a_loading.stop();
+		}
+	}
 }
 
 void CrossButton::onStateChanged(State was, StateChangeSource source) {

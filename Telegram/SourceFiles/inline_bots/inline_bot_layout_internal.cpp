@@ -18,7 +18,6 @@ to link the code of portions of this program with the OpenSSL library.
 Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
 Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
-#include "stdafx.h"
 #include "inline_bots/inline_bot_layout_internal.h"
 
 #include "styles/style_overview.h"
@@ -30,18 +29,18 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "media/media_clip_reader.h"
 #include "media/player/media_player_instance.h"
 #include "history/history_location_manager.h"
-#include "localstorage.h"
-#include "mainwidget.h"
+#include "storage/localstorage.h"
+#include "auth_session.h"
 #include "lang.h"
 
 namespace InlineBots {
 namespace Layout {
 namespace internal {
 
-FileBase::FileBase(Result *result) : ItemBase(result) {
+FileBase::FileBase(gsl::not_null<Context*> context, Result *result) : ItemBase(context, result) {
 }
 
-FileBase::FileBase(DocumentData *document) : ItemBase(document) {
+FileBase::FileBase(gsl::not_null<Context*> context, DocumentData *document) : ItemBase(context, document) {
 }
 
 DocumentData *FileBase::getShownDocument() const {
@@ -95,11 +94,13 @@ ImagePtr FileBase::content_thumb() const {
 	return getResultThumb();
 }
 
-Gif::Gif(Result *result) : FileBase(result) {
+Gif::Gif(gsl::not_null<Context*> context, Result *result) : FileBase(context, result) {
 }
 
-Gif::Gif(DocumentData *document, bool hasDeleteButton) : FileBase(document)
-, _delete(hasDeleteButton ? new DeleteSavedGifClickHandler(document) : nullptr) {
+Gif::Gif(gsl::not_null<Context*> context, DocumentData *document, bool hasDeleteButton) : FileBase(context, document) {
+	if (hasDeleteButton) {
+		_delete = MakeShared<DeleteSavedGifClickHandler>(document);
+	}
 }
 
 void Gif::initDimensions() {
@@ -121,14 +122,14 @@ void Gif::setPosition(int32 position) {
 }
 
 void DeleteSavedGifClickHandler::onClickImpl() const {
-	int32 index = cSavedGifs().indexOf(_data);
+	auto index = cSavedGifs().indexOf(_data);
 	if (index >= 0) {
 		cRefSavedGifs().remove(index);
 		Local::writeSavedGifs();
 
 		MTP::send(MTPmessages_SaveGif(_data->mtpInput(), MTP_bool(true)));
 	}
-	if (App::main()) emit App::main()->savedGifsUpdated();
+	AuthSession::Current().data().savedGifsUpdated().notify();
 }
 
 void Gif::paint(Painter &p, const QRect &clip, const PaintContext *context) const {
@@ -159,7 +160,8 @@ void Gif::paint(Painter &p, const QRect &clip, const PaintContext *context) cons
 	QRect r(0, 0, _width, height);
 	if (animating) {
 		if (!_thumb.isNull()) _thumb = QPixmap();
-		p.drawPixmap(r.topLeft(), _gif->current(frame.width(), frame.height(), _width, height, ImageRoundRadius::None, ImageRoundCorner::None, context->paused ? 0 : context->ms));
+		auto pixmap = _gif->current(frame.width(), frame.height(), _width, height, ImageRoundRadius::None, ImageRoundCorner::None, context->paused ? 0 : context->ms);
+		p.drawPixmap(r.topLeft(), pixmap);
 	} else {
 		prepareThumb(_width, height, frame);
 		if (_thumb.isNull()) {
@@ -304,7 +306,7 @@ void Gif::prepareThumb(int32 width, int32 height, const QSize &frame) const {
 
 void Gif::ensureAnimation() const {
 	if (!_animation) {
-		_animation = std_::make_unique<AnimationData>(animation(const_cast<Gif*>(this), &Gif::step_radial));
+		_animation = std::make_unique<AnimationData>(animation(const_cast<Gif*>(this), &Gif::step_radial));
 	}
 }
 
@@ -339,7 +341,7 @@ void Gif::clipCallback(Media::Clip::Notification notification) {
 				int32 height = st::inlineMediaHeight;
 				QSize frame = countFrameSize();
 				_gif->start(frame.width(), frame.height(), _width, height, ImageRoundRadius::None, ImageRoundCorner::None);
-			} else if (_gif->autoPausedGif() && !Ui::isInlineItemVisible(this)) {
+			} else if (_gif->autoPausedGif() && !context()->inlineItemVisible(this)) {
 				_gif.reset();
 				getShownDocument()->forget();
 			}
@@ -356,7 +358,7 @@ void Gif::clipCallback(Media::Clip::Notification notification) {
 	}
 }
 
-Sticker::Sticker(Result *result) : FileBase(result) {
+Sticker::Sticker(gsl::not_null<Context*> context, Result *result) : FileBase(context, result) {
 }
 
 void Sticker::initDimensions() {
@@ -456,7 +458,7 @@ void Sticker::prepareThumb() const {
 	}
 }
 
-Photo::Photo(Result *result) : ItemBase(result) {
+Photo::Photo(gsl::not_null<Context*> context, Result *result) : ItemBase(context, result) {
 }
 
 void Photo::initDimensions() {
@@ -552,7 +554,7 @@ void Photo::prepareThumb(int32 width, int32 height, const QSize &frame) const {
 	}
 }
 
-Video::Video(Result *result) : FileBase(result)
+Video::Video(gsl::not_null<Context*> context, Result *result) : FileBase(context, result)
 , _link(getResultContentUrlHandler())
 , _title(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineThumbSize - st::inlineThumbSkip)
 , _description(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineThumbSize - st::inlineThumbSkip) {
@@ -669,11 +671,11 @@ void CancelFileClickHandler::onClickImpl() const {
 	_result->cancelFile();
 }
 
-File::File(Result *result) : FileBase(result)
+File::File(gsl::not_null<Context*> context, Result *result) : FileBase(context, result)
 , _title(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::msgFileSize - st::inlineThumbSkip)
 , _description(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::msgFileSize - st::inlineThumbSkip)
-, _open(new OpenFileClickHandler(result))
-, _cancel(new CancelFileClickHandler(result)) {
+, _open(MakeShared<OpenFileClickHandler>(result))
+, _cancel(MakeShared<CancelFileClickHandler>(result)) {
 	updateStatusText();
 	regDocumentItem(getShownDocument(), this);
 }
@@ -790,12 +792,12 @@ File::~File() {
 }
 
 void File::thumbAnimationCallback() {
-	Ui::repaintInlineItem(this);
+	update();
 }
 
 void File::step_radial(TimeMs ms, bool timer) {
 	if (timer) {
-		Ui::repaintInlineItem(this);
+		update();
 	} else {
 		DocumentData *document = getShownDocument();
 		_animation->radial.update(document->progress(), !document->loading() || document->loaded(), ms);
@@ -807,7 +809,7 @@ void File::step_radial(TimeMs ms, bool timer) {
 
 void File::ensureAnimation() const {
 	if (!_animation) {
-		_animation.reset(new AnimationData(animation(const_cast<File*>(this), &File::step_radial)));
+		_animation = std::make_unique<AnimationData>(animation(const_cast<File*>(this), &File::step_radial));
 	}
 }
 
@@ -878,7 +880,7 @@ void File::setStatusSize(int32 newSize, int32 fullSize, int32 duration, qint64 r
 	}
 }
 
-Contact::Contact(Result *result) : ItemBase(result)
+Contact::Contact(gsl::not_null<Context*> context, Result *result) : ItemBase(context, result)
 , _title(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineThumbSize - st::inlineThumbSkip)
 , _description(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineThumbSize - st::inlineThumbSkip) {
 }
@@ -967,7 +969,7 @@ void Contact::prepareThumb(int width, int height) const {
 	}
 }
 
-Article::Article(Result *result, bool withThumb) : ItemBase(result)
+Article::Article(gsl::not_null<Context*> context, Result *result, bool withThumb) : ItemBase(context, result)
 , _url(getResultUrlHandler())
 , _link(getResultContentUrlHandler())
 , _withThumb(withThumb)
@@ -975,7 +977,7 @@ Article::Article(Result *result, bool withThumb) : ItemBase(result)
 , _description(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineThumbSize - st::inlineThumbSkip) {
 	LocationCoords location;
 	if (!_link && result->getLocationCoords(&location)) {
-		_link.reset(new LocationClickHandler(location));
+		_link = MakeShared<LocationClickHandler>(location);
 	}
 	_thumbLetter = getResultThumbLetter();
 }
@@ -1114,7 +1116,7 @@ void Article::prepareThumb(int width, int height) const {
 	}
 }
 
-Game::Game(Result *result) : ItemBase(result)
+Game::Game(gsl::not_null<Context*> context, Result *result) : ItemBase(context, result)
 , _title(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineThumbSize - st::inlineThumbSkip)
 , _description(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineThumbSize - st::inlineThumbSkip) {
 	countFrameSize();
@@ -1198,7 +1200,7 @@ void Game::paint(Painter &p, const QRect &clip, const PaintContext *context) con
 		bool animating = (_gif && _gif->started());
 		if (displayLoading) {
 			if (!_radial) {
-				_radial = std_::make_unique<Ui::RadialAnimation>(animation(const_cast<Game*>(this), &Game::step_radial));
+				_radial = std::make_unique<Ui::RadialAnimation>(animation(const_cast<Game*>(this), &Game::step_radial));
 			}
 			if (!_radial->animating()) {
 				_radial->start(document->progress());
@@ -1323,7 +1325,7 @@ void Game::clipCallback(Media::Clip::Notification notification) {
 				getResultDocument()->forget();
 			} else if (_gif->ready() && !_gif->started()) {
 				_gif->start(_frameSize.width(), _frameSize.height(), st::inlineThumbSize, st::inlineThumbSize, ImageRoundRadius::None, ImageRoundCorner::None);
-			} else if (_gif->autoPausedGif() && !Ui::isInlineItemVisible(this)) {
+			} else if (_gif->autoPausedGif() && !context()->inlineItemVisible(this)) {
 				_gif.reset();
 				getResultDocument()->forget();
 			}

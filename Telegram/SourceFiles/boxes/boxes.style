@@ -237,6 +237,44 @@ contactsAboutFg: windowSubTextFgOver;
 contactsAboutTop: 60px;
 contactsAboutBottom: 19px;
 
+contactsSearchField: InputField(defaultInputField) {
+	textBg: transparent;
+	textMargins: margins(2px, 7px, 2px, 0px);
+
+	placeholderFg: placeholderFg;
+	placeholderFgActive: placeholderFgActive;
+	placeholderFgError: placeholderFgActive;
+	placeholderMargins: margins(2px, 0px, 2px, 0px);
+	placeholderScale: 0.;
+	placeholderFont: normalFont;
+
+	border: 0px;
+	borderActive: 0px;
+
+	heightMin: 32px;
+
+	font: normalFont;
+}
+contactsSearchCancel: CrossButton {
+	width: 44px;
+	height: 44px;
+
+	cross: CrossAnimation {
+		size: 36px;
+		skip: 12px;
+		stroke: 2px;
+		minScale: 0.3;
+	}
+	crossFg: boxTitleCloseFg;
+	crossFgOver: boxTitleCloseFgOver;
+	crossPosition: point(4px, 4px);
+
+	duration: 150;
+	loadingPeriod: 1000;
+	ripple: RippleAnimation(defaultRippleAnimation) {
+		color: windowBgOver;
+	}
+}
 contactsMultiSelect: MultiSelect {
 	bg: boxSearchBg;
 	padding: margins(8px, 6px, 8px, 6px);
@@ -271,47 +309,12 @@ contactsMultiSelect: MultiSelect {
 	}
 	itemSkip: 8px;
 
-	field: InputField(defaultInputField) {
-		textBg: transparent;
-		textMargins: margins(2px, 7px, 2px, 0px);
-
-		placeholderFg: placeholderFg;
-		placeholderFgActive: placeholderFgActive;
-		placeholderFgError: placeholderFgActive;
-		placeholderMargins: margins(2px, 0px, 2px, 0px);
-		placeholderScale: 0.;
-		placeholderFont: normalFont;
-
-		border: 0px;
-		borderActive: 0px;
-
-		heightMin: 32px;
-
-		font: normalFont;
-	}
+	field: contactsSearchField;
 	fieldMinWidth: 42px;
 	fieldIcon: boxFieldSearchIcon;
 	fieldIconSkip: 36px;
 
-	fieldCancel: CrossButton {
-		width: 44px;
-		height: 44px;
-
-		cross: CrossAnimation {
-			size: 36px;
-			skip: 12px;
-			stroke: 2px;
-			minScale: 0.3;
-		}
-		crossFg: boxTitleCloseFg;
-		crossFgOver: boxTitleCloseFgOver;
-		crossPosition: point(4px, 4px);
-
-		duration: 150;
-		ripple: RippleAnimation(defaultRippleAnimation) {
-			color: windowBgOver;
-		}
-	}
+	fieldCancel: contactsSearchCancel;
 	fieldCancelSkip: 40px;
 }
 contactsPhotoCheckbox: RoundImageCheckbox {
@@ -373,6 +376,12 @@ notificationSampleOpacity: 0.5;
 notificationSampleSize: size(64px, 16px);
 
 membersAboutLimitPadding: margins(0px, 12px, 0px, 12px);
+membersAbout: FlatLabel(defaultFlatLabel) {
+	width: 332px;
+	textFg: membersAboutLimitFg;
+	align: align(top);
+	style: boxLabelStyle;
+}
 
 sessionsScroll: boxLayerScroll;
 sessionsHeight: 350px;
@@ -516,6 +525,34 @@ backgroundScroll: ScrollArea(boxLayerScroll) {
 	deltab: 10px;
 }
 
+calendarTitleHeight: boxTitleHeight;
+calendarPrevious: IconButton {
+	width: calendarTitleHeight;
+	height: calendarTitleHeight;
+
+	icon: icon {{ "title_back", boxTitleFg }};
+	iconPosition: point(20px, 20px);
+
+	rippleAreaPosition: point(6px, 6px);
+	rippleAreaSize: 44px;
+	ripple: RippleAnimation(defaultRippleAnimation) {
+		color: windowBgOver;
+	}
+}
+calendarPreviousDisabled: icon {{ "title_back", menuIconFg }};
+calendarNext: IconButton(calendarPrevious) {
+	icon: icon {{ "title_back-flip_horizontal", boxTitleFg }};
+}
+calendarNextDisabled: icon {{ "title_back-flip_horizontal", menuIconFg }};
+calendarTitleFont: boxTitleFont;
+calendarDaysFont: normalFont;
+calendarDaysFg: boxTitleAdditionalFg;
+calendarDaysHeight: 32px;
+calendarCellSize: size(48px, 40px);
+calendarCellInner: 34px;
+calendarPadding: margins(14px, 15px, 14px, 10px);
+calendarScroll: backgroundScroll;
+
 passcodeTextStyle: TextStyle(defaultTextStyle) {
 	lineHeight: 20px;
 }
@@ -549,4 +586,44 @@ colorValueInput: InputField(defaultInputField) {
 	heightMin: 27px;
 }
 colorResultInput: InputField(colorValueInput) {
+}
+
+editPrivacyOptionMargin: margins(23px, 14px, 21px, 0px);
+editPrivacyPadding: margins(23px, 0px, 21px, 0px);
+editPrivacyWarningPadding: margins(23px, 14px, 21px, 0px);
+editPrivacyTitle: FlatLabel(defaultFlatLabel) {
+	width: 320px;
+	textFg: boxTitleFg;
+	maxHeight: 56px;
+	margin: margins(0px, 20px, 0px, 13px);
+	style: TextStyle(defaultTextStyle) {
+		font: boxTitleFont;
+		linkFont: boxTitleFont;
+		linkFontOver: boxTitleFont;
+	}
+}
+editPrivacyLabel: FlatLabel(defaultFlatLabel) {
+	width: 320px;
+	textFg: membersAboutLimitFg;
+	style: defaultTextStyle;
+}
+editPrivacyLinkMargin: margins(0px, 0px, 0px, 8px);
+
+changePhoneIcon: icon {
+	{ "phone_simcard_from", changePhoneSimcardFrom },
+	{ "phone_simcard_migrate", changePhoneSimcardTo, point(30px, 11px) },
+	{ "phone_simcard_to", changePhoneSimcardTo, point(78px, 0px) }
+};
+changePhoneDescription: FlatLabel(boxLabel) {
+	width: 332px;
+	align: align(top);
+}
+changePhoneIconTop: 20px;
+changePhoneDescriptionTop: 96px;
+changePhoneLabel: FlatLabel(defaultFlatLabel) {
+	width: 275px;
+	textFg: windowSubTextFg;
+}
+changePhoneError: FlatLabel(changePhoneLabel) {
+	textFg: boxTextFgError;
 }

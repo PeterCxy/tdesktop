@@ -18,7 +18,6 @@ to link the code of portions of this program with the OpenSSL library.
 Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
 Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
-#include "stdafx.h"
 #include "boxes/stickersetbox.h"
 
 #include "lang.h"
@@ -27,12 +26,20 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "stickers/stickers.h"
 #include "boxes/confirmbox.h"
 #include "apiwrap.h"
-#include "localstorage.h"
+#include "storage/localstorage.h"
 #include "dialogs/dialogs_layout.h"
 #include "styles/style_boxes.h"
 #include "styles/style_stickers.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/scroll_area.h"
+#include "auth_session.h"
+#include "messenger.h"
+
+namespace {
+
+constexpr auto kStickersPanelPerRow = Stickers::kPanelPerRow;
+
+} // namespace
 
 StickerSetBox::StickerSetBox(QWidget*, const MTPInputStickerSet &set)
 : _set(set) {
@@ -68,7 +75,7 @@ void StickerSetBox::onAddStickers() {
 }
 
 void StickerSetBox::onShareStickers() {
-	auto url = CreateInternalLinkHttps(qsl("addstickers/") + _inner->shortName());
+	auto url = Messenger::Instance().createInternalLinkFull(qsl("addstickers/") + _inner->shortName());
 	QApplication::clipboard()->setText(url);
 	Ui::show(Box<InformBox>(lang(lng_stickers_copied)));
 }
@@ -110,7 +117,7 @@ StickerSetBox::Inner::Inner(QWidget *parent, const MTPInputStickerSet &set) : TW
 	MTP::send(MTPmessages_GetStickerSet(_input), rpcDone(&Inner::gotSet), rpcFail(&Inner::failedSet));
 	App::main()->updateStickers();
 
-	subscribe(FileDownload::ImageLoaded(), [this] { update(); });
+	subscribe(AuthSession::CurrentDownloaderTaskFinished(), [this] { update(); });
 
 	setMouseTracking(true);
 
@@ -126,7 +133,7 @@ void StickerSetBox::Inner::gotSet(const MTPmessages_StickerSet &set) {
 	setCursor(style::cur_default);
 	if (set.type() == mtpc_messages_stickerSet) {
 		auto &d = set.c_messages_stickerSet();
-		auto &v = d.vdocuments.c_vector().v;
+		auto &v = d.vdocuments.v;
 		_pack.reserve(v.size());
 		_packOvers.reserve(v.size());
 		for (int i = 0, l = v.size(); i < l; ++i) {
@@ -136,13 +143,13 @@ void StickerSetBox::Inner::gotSet(const MTPmessages_StickerSet &set) {
 			_pack.push_back(doc);
 			_packOvers.push_back(Animation());
 		}
-		auto &packs = d.vpacks.c_vector().v;
+		auto &packs = d.vpacks.v;
 		for (auto i = 0, l = packs.size(); i != l; ++i) {
 			if (packs.at(i).type() != mtpc_stickerPack) continue;
 			auto &pack = packs.at(i).c_stickerPack();
 			if (auto emoji = Ui::Emoji::Find(qs(pack.vemoticon))) {
 				emoji = emoji->original();
-				auto &stickers = pack.vdocuments.c_vector().v;
+				auto &stickers = pack.vdocuments.v;
 
 				StickerPack p;
 				p.reserve(stickers.size());
@@ -180,8 +187,8 @@ void StickerSetBox::Inner::gotSet(const MTPmessages_StickerSet &set) {
 	if (_pack.isEmpty()) {
 		Ui::show(Box<InformBox>(lang(lng_stickers_not_found)));
 	} else {
-		int32 rows = _pack.size() / StickerPanPerRow + ((_pack.size() % StickerPanPerRow) ? 1 : 0);
-		resize(st::stickersPadding.left() + StickerPanPerRow * st::stickersSize.width(), st::stickersPadding.top() + rows * st::stickersSize.height() + st::stickersPadding.bottom());
+		int32 rows = _pack.size() / kStickersPanelPerRow + ((_pack.size() % kStickersPanelPerRow) ? 1 : 0);
+		resize(st::stickersPadding.left() + kStickersPanelPerRow * st::stickersSize.width(), st::stickersPadding.top() + rows * st::stickersSize.height() + st::stickersPadding.bottom());
 	}
 	_loaded = true;
 
@@ -318,8 +325,8 @@ void StickerSetBox::Inner::setSelected(int selected) {
 void StickerSetBox::Inner::startOverAnimation(int index, float64 from, float64 to) {
 	if (index >= 0 && index < _packOvers.size()) {
 		_packOvers[index].start([this, index] {
-			int row = index / StickerPanPerRow;
-			int column = index % StickerPanPerRow;
+			int row = index / kStickersPanelPerRow;
+			int column = index % kStickersPanelPerRow;
 			int left = st::stickersPadding.left() + column * st::stickersSize.width();
 			int top = st::stickersPadding.top() + row * st::stickersSize.height();
 			rtlupdate(left, top, st::stickersSize.width(), st::stickersSize.height());
@@ -340,8 +347,8 @@ int32 StickerSetBox::Inner::stickerFromGlobalPos(const QPoint &p) const {
 	if (rtl()) l.setX(width() - l.x());
 	int32 row = (l.y() >= st::stickersPadding.top()) ? qFloor((l.y() - st::stickersPadding.top()) / st::stickersSize.height()) : -1;
 	int32 col = (l.x() >= st::stickersPadding.left()) ? qFloor((l.x() - st::stickersPadding.left()) / st::stickersSize.width()) : -1;
-	if (row >= 0 && col >= 0 && col < StickerPanPerRow) {
-		int32 result = row * StickerPanPerRow + col;
+	if (row >= 0 && col >= 0 && col < kStickersPanelPerRow) {
+		int32 result = row * kStickersPanelPerRow + col;
 		return (result < _pack.size()) ? result : -1;
 	}
 	return -1;
@@ -354,12 +361,12 @@ void StickerSetBox::Inner::paintEvent(QPaintEvent *e) {
 	if (_pack.isEmpty()) return;
 
 	auto ms = getms();
-	int32 rows = _pack.size() / StickerPanPerRow + ((_pack.size() % StickerPanPerRow) ? 1 : 0);
+	int32 rows = _pack.size() / kStickersPanelPerRow + ((_pack.size() % kStickersPanelPerRow) ? 1 : 0);
 	int32 from = qFloor(e->rect().top() / st::stickersSize.height()), to = qFloor(e->rect().bottom() / st::stickersSize.height()) + 1;
 
 	for (int32 i = from; i < to; ++i) {
-		for (int32 j = 0; j < StickerPanPerRow; ++j) {
-			int32 index = i * StickerPanPerRow + j;
+		for (int32 j = 0; j < kStickersPanelPerRow; ++j) {
+			int32 index = i * kStickersPanelPerRow + j;
 			if (index >= _pack.size()) break;
 			t_assert(index < _packOvers.size());
 

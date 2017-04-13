@@ -99,6 +99,14 @@ dialogsLock: IconButton(dialogsMenuToggle) {
 }
 dialogsUnlockIcon: icon {{ "dialogs_unlock", dialogsMenuIconFg }};
 dialogsUnlockIconOver: icon {{ "dialogs_unlock", dialogsMenuIconFgOver }};
+dialogsCalendar: IconButton {
+	width: 32px;
+	height: 32px;
+
+	icon: icon {{ "dialogs_calendar", dialogsMenuIconFg }};
+	iconOver: icon {{ "dialogs_calendar", dialogsMenuIconFgOver }};
+	iconPosition: point(3px, 3px);
+}
 
 dialogsFilter: FlatInput(defaultFlatInput) {
 	font: font(fsize);
@@ -129,6 +137,7 @@ dialogsCancelSearch: CrossButton {
 	crossPosition: point(0px, 0px);
 
 	duration: 150;
+	loadingPeriod: 1000;
 	ripple: emptyRippleAnimation;
 }
 

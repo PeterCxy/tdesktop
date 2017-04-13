@@ -18,16 +18,12 @@ to link the code of portions of this program with the OpenSSL library.
 Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
 Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
-#include "stdafx.h"
-
 #include "mtproto/rsa_public_key.h"
 
 #include <openssl/rsa.h>
 #include <openssl/pem.h>
 #include <openssl/bio.h>
 #include <openssl/err.h>
-
-using std::string;
 
 namespace MTP {
 namespace internal {
@@ -47,7 +43,7 @@ RSAPublicKey::RSAPublicKey(const char *key) : impl_(new Impl(key)) {
 
 	int nBytes = BN_num_bytes(impl_->rsa->n);
 	int eBytes = BN_num_bytes(impl_->rsa->e);
-	string nStr(nBytes, 0), eStr(eBytes, 0);
+	std::string nStr(nBytes, 0), eStr(eBytes, 0);
 	BN_bn2bin(impl_->rsa->n, (uchar*)&nStr[0]);
 	BN_bn2bin(impl_->rsa->e, (uchar*)&eStr[0]);
 
@@ -67,8 +63,8 @@ bool RSAPublicKey::isValid() const {
 	return impl_->rsa != nullptr;
 }
 
-bool RSAPublicKey::encrypt(const void *data, string &result) const {
-	t_assert(isValid());
+bool RSAPublicKey::encrypt(const void *data, std::string &result) const {
+	Expects(isValid());
 
 	result.resize(256);
 	int res = RSA_public_encrypt(256, reinterpret_cast<const unsigned char*>(data), reinterpret_cast<uchar*>(&result[0]), impl_->rsa, RSA_NO_PADDING);

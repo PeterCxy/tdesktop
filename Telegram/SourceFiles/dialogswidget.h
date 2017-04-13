@@ -37,7 +37,13 @@ class FlatButton;
 class LinkButton;
 class FlatInput;
 class CrossButton;
+template <typename Widget>
+class WidgetScaledFadeWrap;
 } // namespace Ui
+
+namespace Window {
+class Controller;
+} // namespace Window
 
 enum DialogsSearchRequestType {
 	DialogsSearchFromStart,
@@ -89,6 +95,7 @@ public:
 
 	Dialogs::IndexedList *contactsList();
 	Dialogs::IndexedList *dialogsList();
+	Dialogs::IndexedList *contactsNoDialogsList();
 	int32 lastSearchDate() const;
 	PeerData *lastSearchPeer() const;
 	MsgId lastSearchId() const;
@@ -112,8 +119,8 @@ public:
 
 	PeerData *updateFromParentDrag(QPoint globalPos);
 
-	void setLoadMoreCallback(base::lambda<void()> &&callback) {
-		_loadMoreCallback = std_::move(callback);
+	void setLoadMoreCallback(base::lambda<void()> callback) {
+		_loadMoreCallback = std::move(callback);
 	}
 	void setVisibleTopBottom(int visibleTop, int visibleBottom) override;
 
@@ -152,13 +159,13 @@ protected:
 
 private:
 	struct ImportantSwitch;
-	using DialogsList = std_::unique_ptr<Dialogs::IndexedList>;
+	using DialogsList = std::unique_ptr<Dialogs::IndexedList>;
 	using FilteredDialogs = QVector<Dialogs::Row*>;
-	using SearchResults = std_::vector_of_moveable<std_::unique_ptr<Dialogs::FakeRow>>;
+	using SearchResults = std::vector<std::unique_ptr<Dialogs::FakeRow>>;
 	struct HashtagResult;
-	using HashtagResults = std_::vector_of_moveable<std_::unique_ptr<HashtagResult>>;
+	using HashtagResults = std::vector<std::unique_ptr<HashtagResult>>;
 	struct PeerSearchResult;
-	using PeerSearchResults = std_::vector_of_moveable<std_::unique_ptr<PeerSearchResult>>;
+	using PeerSearchResults = std::vector<std::unique_ptr<PeerSearchResult>>;
 
 	void mousePressReleased(Qt::MouseButton button);
 	void clearIrrelevantState();
@@ -228,7 +235,7 @@ private:
 	bool _mouseSelection = false;
 	Qt::MouseButton _pressButton = Qt::LeftButton;
 
-	std_::unique_ptr<ImportantSwitch> _importantSwitch;
+	std::unique_ptr<ImportantSwitch> _importantSwitch;
 	bool _importantSwitchSelected = false;
 	bool _importantSwitchPressed = false;
 	Dialogs::Row *_selected = nullptr;
@@ -242,7 +249,7 @@ private:
 		anim::value yadd;
 		TimeMs animStartTime = 0;
 	};
-	std_::vector_of_moveable<PinnedRow> _pinnedRows;
+	std::vector<PinnedRow> _pinnedRows;
 	BasicAnimation _a_pinnedShifting;
 	QList<History*> _pinnedOrder;
 
@@ -300,7 +307,7 @@ class DialogsWidget : public TWidget, public RPCSender, private base::Subscriber
 	Q_OBJECT
 
 public:
-	DialogsWidget(QWidget *parent);
+	DialogsWidget(QWidget *parent, gsl::not_null<Window::Controller*> controller);
 
 	void updateDragInScroll(bool inScroll);
 
@@ -333,6 +340,7 @@ public:
 
 	Dialogs::IndexedList *contactsList();
 	Dialogs::IndexedList *dialogsList();
+	Dialogs::IndexedList *contactsNoDialogsList();
 
 	void searchMessages(const QString &query, PeerData *inPeer = 0);
 	void onSearchMore();
@@ -394,18 +402,21 @@ private:
 	void setSearchInPeer(PeerData *peer);
 	void showMainMenu();
 	void updateLockUnlockVisibility();
+	void updateJumpToDateVisibility(bool fast = false);
 	void updateControlsGeometry();
 	void updateForwardBar();
-
-	bool _dragInScroll = false;
-	bool _dragForward = false;
-	QTimer _chooseByDragTimer;
 
 	void unreadCountsReceived(const QVector<MTPDialog> &dialogs);
 	bool dialogsFailed(const RPCError &error, mtpRequestId req);
 	bool contactsFailed(const RPCError &error);
 	bool searchFailed(DialogsSearchRequestType type, const RPCError &error, mtpRequestId req);
 	bool peopleFailed(const RPCError &error, mtpRequestId req);
+
+	gsl::not_null<Window::Controller*> _controller;
+
+	bool _dragInScroll = false;
+	bool _dragForward = false;
+	QTimer _chooseByDragTimer;
 
 	bool _dialogsFull = false;
 	int32 _dialogsOffsetDate = 0;
@@ -419,6 +430,7 @@ private:
 	object_ptr<Ui::IconButton> _forwardCancel = { nullptr };
 	object_ptr<Ui::IconButton> _mainMenuToggle;
 	object_ptr<Ui::FlatInput> _filter;
+	object_ptr<Ui::WidgetScaledFadeWrap<Ui::IconButton>> _jumpToDate;
 	object_ptr<Ui::CrossButton> _cancelSearch;
 	object_ptr<Ui::IconButton> _lockUnlock;
 	object_ptr<Ui::ScrollArea> _scroll;

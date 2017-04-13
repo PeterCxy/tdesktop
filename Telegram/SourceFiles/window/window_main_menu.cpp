@@ -18,12 +18,12 @@ to link the code of portions of this program with the OpenSSL library.
 Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
 Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
-#include "stdafx.h"
 #include "window/window_main_menu.h"
 
 #include "styles/style_window.h"
 #include "styles/style_dialogs.h"
 #include "profile/profile_userpic_button.h"
+#include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/menu.h"
 #include "mainwindow.h"
@@ -31,6 +31,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "boxes/aboutbox.h"
 #include "lang.h"
 #include "core/click_handler_types.h"
+#include "auth_session.h"
 
 namespace Window {
 
@@ -71,26 +72,32 @@ MainMenu::MainMenu(QWidget *parent) : TWidget(parent)
 	_version->setLink(1, MakeShared<UrlClickHandler>(qsl("https://desktop.telegram.org/changelog")));
 	_version->setLink(2, MakeShared<LambdaClickHandler>([] { Ui::show(Box<AboutBox>()); }));
 
-	subscribe(FileDownload::ImageLoaded(), [this] { update(); });
+	subscribe(AuthSession::CurrentDownloaderTaskFinished(), [this] { update(); });
 	subscribe(Global::RefConnectionTypeChanged(), [this] { updateConnectionState(); });
 	updateConnectionState();
 }
 
 void MainMenu::checkSelf() {
 	if (auto self = App::self()) {
-		_userpicButton.create(this, self, st::mainMenuUserpicSize);
-		_userpicButton->setClickedCallback([] {
+		auto showSelfChat = [] {
 			if (auto self = App::self()) {
 				Ui::showPeerHistory(App::history(self), ShowAtUnreadMsgId);
 			}
-		});
+		};
+		_userpicButton.create(this, self, st::mainMenuUserpicSize);
+		_userpicButton->setClickedCallback(showSelfChat);
 		_userpicButton->show();
+		_cloudButton.create(this, st::mainMenuCloudButton);
+		_cloudButton->setClickedCallback(showSelfChat);
+		_cloudButton->show();
+		update();
 		updateControlsGeometry();
 		if (_showFinished) {
 			_userpicButton->showFinished();
 		}
 	} else {
 		_userpicButton.destroy();
+		_cloudButton.destroy();
 	}
 }
 
@@ -108,6 +115,9 @@ void MainMenu::resizeEvent(QResizeEvent *e) {
 void MainMenu::updateControlsGeometry() {
 	if (_userpicButton) {
 		_userpicButton->moveToLeft(st::mainMenuUserpicLeft, st::mainMenuUserpicTop);
+	}
+	if (_cloudButton) {
+		_cloudButton->moveToRight(0, st::mainMenuCoverHeight - _cloudButton->height());
 	}
 	_menu->setGeometry(0, st::mainMenuCoverHeight + st::mainMenuSkip, width(), _menu->height());
 	_telegram->moveToLeft(st::mainMenuFooterLeft, height() - st::mainMenuTelegramBottom - _telegram->height());
@@ -136,6 +146,15 @@ void MainMenu::paintEvent(QPaintEvent *e) {
 			self->nameText.drawLeftElided(p, st::mainMenuCoverTextLeft, st::mainMenuCoverNameTop, width() - 2 * st::mainMenuCoverTextLeft, width());
 			p.setFont(st::normalFont);
 			p.drawTextLeft(st::mainMenuCoverTextLeft, st::mainMenuCoverStatusTop, width(), _connectionText);
+		}
+		if (_cloudButton) {
+			PainterHighQualityEnabler hq(p);
+			p.setPen(Qt::NoPen);
+			p.setBrush(st::mainMenuCloudBg);
+			auto cloudBg = QRect(_cloudButton->x() + (_cloudButton->width() - st::mainMenuCloudSize) / 2,
+				_cloudButton->y() + (_cloudButton->height() - st::mainMenuCloudSize) / 2,
+				st::mainMenuCloudSize, st::mainMenuCloudSize);
+			p.drawEllipse(cloudBg);
 		}
 	}
 	auto other = QRect(0, st::mainMenuCoverHeight, width(), height() - st::mainMenuCoverHeight).intersected(clip);

@@ -20,7 +20,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 */
 #pragma once
 
-#include "localimageloader.h"
+#include "storage/localimageloader.h"
 #include "history/history_common.h"
 #include "core/single_timer.h"
 
@@ -41,12 +41,12 @@ class Panel;
 } // namespace Media
 
 namespace Ui {
-class PeerAvatarButton;
 class PlainShadow;
 class DropdownMenu;
 } // namespace Ui
 
 namespace Window {
+class Controller;
 class PlayerWrapWidget;
 class TopBarWidget;
 class SectionMemento;
@@ -93,7 +93,7 @@ public:
 
 class StackItemSection : public StackItem {
 public:
-	StackItemSection(std_::unique_ptr<Window::SectionMemento> &&memento);
+	StackItemSection(std::unique_ptr<Window::SectionMemento> &&memento);
 	~StackItemSection();
 
 	StackItemType type() const {
@@ -104,7 +104,7 @@ public:
 	}
 
 private:
-	std_::unique_ptr<Window::SectionMemento> _memento;
+	std::unique_ptr<Window::SectionMemento> _memento;
 
 };
 
@@ -143,7 +143,7 @@ class MainWidget : public TWidget, public RPCSender, private base::Subscriber {
 	Q_OBJECT
 
 public:
-	MainWidget(QWidget *parent);
+	MainWidget(QWidget *parent, std::unique_ptr<Window::Controller> controller);
 
 	bool needBackButton();
 
@@ -151,14 +151,12 @@ public:
 	bool paintTopBar(Painter &, int decreaseWidth, TimeMs ms);
 	QRect getMembersShowAreaGeometry() const;
 	void setMembersShowAreaActive(bool active);
-	Window::TopBarWidget *topBar();
-	int backgroundFromY() const;
 
 	int contentScrollAddToY() const;
 
 	void showAnimated(const QPixmap &bgAnimCache, bool back = false);
 
-	void start(const MTPUser &user);
+	void start(const MTPUser *self = nullptr);
 
 	void checkStartUrl();
 	void openLocalUrl(const QString &str);
@@ -166,7 +164,6 @@ public:
 	void joinGroupByHash(const QString &hash);
 	void stickersBox(const MTPInputStickerSet &set);
 
-	void startFull(const MTPVector<MTPUser> &users);
 	bool started();
 	void applyNotifySetting(const MTPNotifyPeer &peer, const MTPPeerNotifySettings &settings, History *history = 0);
 
@@ -181,6 +178,8 @@ public:
 	void dlgUpdated();
 	void dlgUpdated(Dialogs::Mode list, Dialogs::Row *row);
 	void dlgUpdated(PeerData *peer, MsgId msgId);
+
+	void showJumpToDate(PeerData *peer, QDate requestedDate);
 
 	void windowShown();
 
@@ -204,8 +203,9 @@ public:
 	PeerData *activePeer();
 	MsgId activeMsgId();
 
+	int backgroundFromY() const;
 	PeerData *overviewPeer();
-	bool mediaTypeSwitch();
+	bool showMediaTypeSwitch() const;
 	void showWideSection(const Window::SectionMemento &memento);
 	void showMediaOverview(PeerData *peer, MediaOverviewType type, bool back = false, int32 lastScrollTop = -1);
 	bool stackIsEmpty() const;
@@ -285,6 +285,7 @@ public:
 
 	Dialogs::IndexedList *contactsList();
 	Dialogs::IndexedList *dialogsList();
+	Dialogs::IndexedList *contactsNoDialogsList();
 
 	struct MessageToSend {
 		History *history = nullptr;
@@ -305,8 +306,9 @@ public:
 
 	void sendBotCommand(PeerData *peer, UserData *bot, const QString &cmd, MsgId replyTo);
 	void hideSingleUseKeyboard(PeerData *peer, MsgId replyTo);
-	bool insertBotCommand(const QString &cmd, bool specialGif);
+	bool insertBotCommand(const QString &cmd);
 
+	void jumpToDate(PeerData *peer, const QDate &date);
 	void searchMessages(const QString &query, PeerData *inPeer);
 	bool preloadOverview(PeerData *peer, MediaOverviewType type);
 	void preloadOverviews(PeerData *peer);
@@ -355,8 +357,6 @@ public:
 	void choosePeer(PeerId peerId, MsgId showAtMsgId); // does offerPeer or showPeerHistory
 	void clearBotStartToken(PeerData *peer);
 
-	void contactsReceived();
-
 	void ptsWaiterStartTimerFor(ChannelData *channel, int32 ms); // ms <= 0 - stop timer
 	void feedUpdates(const MTPUpdates &updates, uint64 randomId = 0);
 	void feedUpdate(const MTPUpdate &update);
@@ -367,19 +367,12 @@ public:
 
 	void scheduleViewIncrement(HistoryItem *item);
 
-	void fillPeerMenu(PeerData *peer, base::lambda<QAction*(const QString &text, base::lambda<void()> &&handler)> &&callback, bool pinToggle);
+	void fillPeerMenu(PeerData *peer, base::lambda<QAction*(const QString &text, base::lambda<void()> handler)> callback, bool pinToggle);
 
 	void gotRangeDifference(ChannelData *channel, const MTPupdates_ChannelDifference &diff);
 	void onSelfParticipantUpdated(ChannelData *channel);
 
 	bool contentOverlapped(const QRect &globalRect);
-
-	base::Observable<PeerData*> &searchInPeerChanged() {
-		return _searchInPeerChanged;
-	}
-	base::Observable<PeerData*> &historyPeerChanged() {
-		return _historyPeerChanged;
-	}
 
 	void rpcClear() override;
 
@@ -390,9 +383,6 @@ public:
 	void app_sendBotCallback(const HistoryMessageReplyMarkup::Button *button, const HistoryItem *msg, int row, int col);
 
 	void ui_repaintHistoryItem(const HistoryItem *item);
-	void ui_repaintInlineItem(const InlineBots::Layout::ItemBase *layout);
-	bool ui_isInlineItemVisible(const InlineBots::Layout::ItemBase *layout);
-	bool ui_isInlineItemBeingChosen();
 	void ui_showPeerHistory(quint64 peer, qint32 msgId, Ui::ShowWay way);
 	PeerData *ui_getPeerForMouseAction();
 
@@ -404,9 +394,7 @@ public:
 	void notify_userIsBotChanged(UserData *bot);
 	void notify_userIsContactChanged(UserData *user, bool fromThisApp);
 	void notify_migrateUpdated(PeerData *peer);
-	void notify_clipStopperHidden(ClipStopperType type);
 	void notify_historyItemLayoutChanged(const HistoryItem *item);
-	void notify_inlineItemLayoutChanged(const InlineBots::Layout::ItemBase *layout);
 	void notify_historyMuteUpdated(History *history);
 	void notify_handlePendingHistoryUpdate();
 
@@ -423,7 +411,6 @@ signals:
 	void dialogRowReplaced(Dialogs::Row *oldRow, Dialogs::Row *newRow);
 	void dialogsUpdated();
 	void stickersUpdated();
-	void savedGifsUpdated();
 
 public slots:
 	void webPagesOrGamesUpdate();
@@ -444,19 +431,11 @@ public slots:
 	void checkIdleFinish();
 	void updateOnlineDisplay();
 
-	void onTopBarClick();
 	void onHistoryShown(History *history, MsgId atMsgId);
 
 	void searchInPeer(PeerData *peer);
 
 	void onUpdateNotifySettings();
-
-	void onPhotosSelect();
-	void onVideosSelect();
-	void onSongsSelect();
-	void onDocumentsSelect();
-	void onAudiosSelect();
-	void onLinksSelect();
 
 	void onCacheBackground();
 
@@ -518,8 +497,11 @@ private:
 	Window::SectionSlideParams prepareOverviewAnimation();
 	Window::SectionSlideParams prepareDialogsAnimation();
 
+	void startWithSelf(const MTPVector<MTPUser> &users);
+
 	void saveSectionInStack();
 
+	std::unique_ptr<Window::Controller> _controller;
 	bool _started = false;
 
 	SelectedItemSet _toForward;
@@ -582,9 +564,6 @@ private:
 
 	void clearCachedBackground();
 
-	base::Observable<PeerData*> _searchInPeerChanged;
-	base::Observable<PeerData*> _historyPeerChanged;
-
 	Animation _a_show;
 	bool _showBack = false;
 	QPixmap _cacheUnder, _cacheOver;
@@ -598,7 +577,6 @@ private:
 	object_ptr<HistoryWidget> _history;
 	object_ptr<Window::SectionWidget> _wideSection = { nullptr };
 	object_ptr<OverviewWidget> _overview = { nullptr };
-	object_ptr<Window::TopBarWidget> _topBar;
 
 	object_ptr<Window::PlayerWrapWidget> _player = { nullptr };
 	object_ptr<Media::Player::VolumeWidget> _playerVolume = { nullptr };
@@ -608,15 +586,12 @@ private:
 
 	QPointer<ConfirmBox> _forwardConfirm; // for single column layout
 	object_ptr<HistoryHider> _hider = { nullptr };
-	std_::vector_of_moveable<std_::unique_ptr<StackItem>> _stack;
+	std::vector<std::unique_ptr<StackItem>> _stack;
 	PeerData *_peerInStack = nullptr;
 	MsgId _msgIdInStack = 0;
 
 	int _playerHeight = 0;
 	int _contentScrollAddToY = 0;
-
-	object_ptr<Ui::DropdownMenu> _mediaType;
-	int32 _mediaTypeMask = 0;
 
 	int32 updDate = 0;
 	int32 updQts = -1;
@@ -693,9 +668,9 @@ private:
 	void viewsIncrementDone(QVector<MTPint> ids, const MTPVector<MTPint> &result, mtpRequestId req);
 	bool viewsIncrementFail(const RPCError &error, mtpRequestId req);
 
-	std_::unique_ptr<App::WallPaper> _background;
+	std::unique_ptr<App::WallPaper> _background;
 
-	std_::unique_ptr<ApiWrap> _api;
+	std::unique_ptr<ApiWrap> _api;
 
 	bool _resizingSide = false;
 	int _resizingSideShift = 0;
