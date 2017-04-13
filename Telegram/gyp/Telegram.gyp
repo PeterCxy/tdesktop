@@ -78,24 +78,16 @@
       'codegen.gyp:codegen_style',
       'codegen.gyp:codegen_numbers',
       'codegen.gyp:MetaLang',
-      'utils.gyp:Updater',
     ],
 
     'defines': [
-      'AL_LIBTYPE_STATIC',
       '<!@(python -c "for s in \'<(build_defines)\'.split(\',\'): print(s)")',
     ],
 
     'include_dirs': [
       '<(src_loc)',
       '<(SHARED_INTERMEDIATE_DIR)',
-      '<(libs_loc)/breakpad/src',
-      '<(libs_loc)/lzma/C',
-      '<(libs_loc)/libexif-0.6.20',
-      '<(libs_loc)/zlib-1.2.8',
-      '<(libs_loc)/ffmpeg',
-      '<(libs_loc)/openal-soft/include',
-      '<(minizip_loc)',
+      '/usr/include/minizip',
       '<(sp_media_key_tap_loc)',
       '<(submodules_loc)/GSL/include',
       '<(submodules_loc)/variant/include',
