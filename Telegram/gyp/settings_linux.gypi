@@ -60,6 +60,7 @@
       ],
       'defines': [
         '_REENTRANT',
+        'QT_STATICPLUGIN',
         'QT_PLUGIN',
       ],
       'cflags': [

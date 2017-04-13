@@ -505,7 +505,7 @@ void psRegisterCustomScheme() {
 			s << "Exec=" << escapeShell(QFile::encodeName(cExeDir() + cExeName())) << " -- %u\n";
 			s << "Icon=telegram\n";
 			s << "Terminal=false\n";
-			s << "StartupWMClass=TelegramDesktop\n";
+			s << "StartupWMClass=Telegram\n";
 			s << "Type=Application\n";
 			s << "Categories=Network;\n";
 			s << "MimeType=x-scheme-handler/tg;\n";
@@ -572,7 +572,7 @@ bool _execUpdater(bool update = true, const QString &crashreport = QString()) {
 	static const int MaxLen = 65536, MaxArgsCount = 128;
 
 	char path[MaxLen] = {0};
-	QByteArray data(QFile::encodeName(cExeDir() + (update ? "Updater" : gExeName)));
+	QByteArray data(QFile::encodeName(cExeDir() + "Updater"));
 	memcpy(path, data.constData(), data.size());
 
 	char *args[MaxArgsCount] = {0}, p_noupdate[] = "-noupdate", p_autostart[] = "-autostart", p_debug[] = "-debug", p_tosettings[] = "-tosettings", p_key[] = "-key", p_path[] = "-workpath", p_startintray[] = "-startintray", p_testmode[] = "-testmode", p_crashreport[] = "-crashreport";
